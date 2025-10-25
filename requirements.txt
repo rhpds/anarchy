@@ -1,3 +1,4 @@
+aiofiles==25.1.0
 ansible==12.1.0
 ansible-core==2.19.3
 ansible-runner==2.4.2
