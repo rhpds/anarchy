@@ -168,9 +168,22 @@ class AnarchyRunner:
             )
 
         if ansible_run.status != 'successful':
-            # Get 'msg' from last task of last play on localhost for failure message
+            # Get 'msg' from last failed task of last play on localhost for failure message
             try:
-                status_message = run_data['plays'][-1]['tasks'][-1]['hosts']['localhost'].get('result', {}).get('msg', '')
+                status_message = None
+                for play in reversed(run_data.get('plays', [])):
+                    for task in reversed(play.get('tasks', [])):
+                        task_name = task.get('name', 'task')
+                        task_action = task.get('action', 'unknown action')
+                        for host, item in task.get('hosts', {}).items():
+                            if item.get('failed', False):
+                                result = item.get('result')
+                                status_message = f"{host} failed {task_action}, {task_name}: {result.get('msg')}"
+                                break
+                        if status_message is not None:
+                            break
+                    if status_message is not None:
+                        break
             except Exception as e:
                 status_message = f"Unable to determine failure from run data: {e}"
             raise AnarchyRunException(
