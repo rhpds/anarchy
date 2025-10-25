@@ -36,4 +36,8 @@ chmod ug=rwx,o= \
   /opt/app-root/anarchy-runner/ansible-runner/env \
   /opt/app-root/anarchy-runner/ansible-runner/inventory/group_vars/all
 
-exec /usr/libexec/s2i/assemble
+pip3 install --upgrade pip
+/usr/libexec/s2i/assemble
+# Make sure jmespath-community version is installed and overrides standard jmespath
+pip install --force jmespath-community==1.1.3
+fix-permissions /opt/app-root
