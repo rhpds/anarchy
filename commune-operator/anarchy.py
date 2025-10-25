@@ -59,7 +59,7 @@ class Anarchy():
 
         return await cls.api_client.call_api(
             auth_settings = ['BearerToken'],
-            body = json.dumps(definition).encode('utf-8'),
+            body = definition,
             header_params = {
                 "Accept": "application/json",
                 "Content-Type": "application/apply-patch+yaml",
