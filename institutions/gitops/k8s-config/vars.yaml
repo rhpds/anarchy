@@ -4,7 +4,7 @@ anarchy_version: main
 k8s_resources:
 - name: Anarchy install
   openshift_template:
-    url: https://raw.githubusercontent.com/redhat-cop/anarchy/{{ anarchy_version }}/install-template.yaml
+    url: https://raw.githubusercontent.com/rhpds/anarchy/{{ anarchy_version }}/install-template.yaml
 
 - namespace: anarchy-k8s-config
   resources:
@@ -12,7 +12,7 @@ k8s_resources:
     helm_template:
       dir: "institutions/gitops/helm"
       git:
-        repo: https://github.com/redhat-cop/anarchy.git
+        repo: https://github.com/rhpds/anarchy.git
         version: "{{ anarchy_version }}"
       values:
         k8s_config: "{{ k8s_config }}"
@@ -36,4 +36,4 @@ k8s_resources:
           - name: anarchy-k8s-config
             base_path: institutions/gitops/k8s-config
             git:
-              repo: https://github.com/redhat-cop/anarchy.git
+              repo: https://github.com/rhpds/anarchy.git

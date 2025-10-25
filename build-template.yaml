@@ -8,7 +8,7 @@ metadata:
 
 parameters:
 - name: GIT_REPO
-  value: https://github.com/redhat-cop/anarchy.git
+  value: https://github.com/rhpds/anarchy.git
 - name: GIT_REF
   value: main
 - name: NAME

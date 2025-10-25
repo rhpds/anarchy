@@ -13,7 +13,7 @@ communeOperator:
       memory: 128Mi
 
 image:
-  repository: quay.io/redhat-cop/anarchy
+  repository: quay.io/rhpds/anarchy
   pullPolicy: IfNotPresent
 
 # Deploy Anarchy, as opposed to only defining the CRDs and ClusterRoles

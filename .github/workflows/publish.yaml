@@ -8,9 +8,6 @@ on:
     - 'v[0-9]*'
 jobs:
   publish:
-    env:
-      IMAGE_NAME: anarchy
-      OPERATOR_IMAGE_NAME: anarchy-operator
     runs-on: ubuntu-latest
     steps:
     - name: Checkout source
@@ -22,23 +19,21 @@ jobs:
         # Version is a semantic version tag or semantic version with release number
         # GITHUB_REF will be of the form "refs/tags/v0.1.2" or "refs/tags/v0.1.2-1"
         # To determine RELEASE, strip off the leading "refs/tags/"
-        RELEASE=${GITHUB_REF#refs/tags/v}
+        RELEASE=${GITHUB_REF#refs/tags/}
         # To determine VERSION, strip off any release number suffix
         VERSION=${RELEASE/-*/}
-
-        echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
 
         # Only build image if version tag without release number
         # Releases indicate a change in the repository that should not trigger a new build.
         if [[ "${VERSION}" == "${RELEASE}" ]]; then
           # Publish to latest, minor, and patch tags
           # Ex: latest,v1.2,v1.2.3
-          echo "IMAGE_TAGS=latest v${VERSION%.*} v${VERSION}" >> $GITHUB_OUTPUT
+          echo "IMAGE_TAGS=latest ${VERSION%.*} ${VERSION}" >> $GITHUB_OUTPUT
         fi
 
         # Read version from helm/Chart.yaml
         HELM_CHART_VERSION=$(sed -nr 's/^appVersion: (.*)/\1/p' helm/Chart.yaml)
-        if [[ "${HELM_CHART_VERSION}" != "${VERSION}" ]]; then
+        if [[ "v${HELM_CHART_VERSION}" != "${VERSION}" ]]; then
           echo "Helm chart version does not match tag!"
           exit 1
         fi
@@ -48,9 +43,9 @@ jobs:
       if: steps.image_tags.outputs.IMAGE_TAGS
       uses: redhat-actions/buildah-build@v2
       with:
-        image: ${{ env.IMAGE_NAME }}
+        image: ${{ vars.IMAGE_NAME }}
         tags: ${{ steps.image_tags.outputs.IMAGE_TAGS }}
-        containerfiles: Dockerfile
+        containerfiles: Containerfile
 
     - name: Push image to registry
       id: push-to-registry
@@ -60,13 +55,11 @@ jobs:
         image: ${{ steps.buildah-build.outputs.image }}
         tags: ${{ steps.buildah-build.outputs.tags }}
         registry: ${{ vars.IMAGE_REGISTRY }}/${{ vars.IMAGE_REPOSITORY }}
-        username: ${{ secrets.REGISTRY_USERNAME }}
-        password: ${{ secrets.REGISTRY_PASSWORD }}
+        username: ${{ secrets.IMAGE_REGISTRY_USERNAME }}
+        password: ${{ secrets.IMAGE_REGISTRY_PASSWORD }}
 
   publish-helm-charts:
     needs: publish
-    env:
-      IMAGE_NAME: anarchy
     runs-on: ubuntu-latest
     steps:
     - name: Checkout Source
@@ -89,8 +82,8 @@ jobs:
       run: |
         helm dep up helm/
         helm package helm/
-        mv ${{ env.IMAGE_NAME }}-*.tgz gh-pages
-        helm repo index --url https://redhat-cop.github.io/${{ env.IMAGE_NAME }} gh-pages
+        mv ${{ vars.IMAGE_NAME }}-*.tgz gh-pages
+        helm repo index --url https://redhat-cop.github.io/${{ vars.IMAGE_NAME }} gh-pages
 
     - name: Push Changes to GH Pages
       run: |
