@@ -5,6 +5,7 @@
 
 import os
 import re
+import json
 import yaml
 
 from ansible.plugins.action import ActionBase
@@ -72,6 +73,9 @@ class ActionModule(ActionBase):
             "after": after_timestamp,
             "vars": vars,
         }
+
+        # Serialize and deserialize to strip ansible classes
+        result_data = json.loads(json.dumps(result_data))
 
         with open(os.path.join(anarchy_output_dir, 'anarchy-result.yaml'), 'w') as f:
             yaml.safe_dump(result_data, f)
