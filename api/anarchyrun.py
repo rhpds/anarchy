@@ -112,7 +112,7 @@ class AnarchyRun(AnarchyWatchObject):
             try:
                 await anarchy_run.set_runner_state_lost(anarchy_runner_pod)
             except Exception as e:
-                logging.exception("Error resetting {anarchy_run} to lost")
+                logging.exception(f"Error resetting {anarchy_run} to lost")
 
     @classmethod
     async def on_startup(cls):
@@ -122,7 +122,7 @@ class AnarchyRun(AnarchyWatchObject):
             if runner_pod_name in cls.runner_states:
                 continue
             if runner_pod_name not in anarchyrunnerpod.AnarchyRunnerPod.cache:
-                logging.warning("{anarchy_run} was lost by AnarchyRunner pod {runner_pod_name} on startup")
+                logging.warning(f"{anarchy_run} was lost by AnarchyRunner pod {runner_pod_name} on startup")
                 await anarchy_run.set_runner_state_pending()
 
     @property
@@ -341,4 +341,4 @@ class AnarchyRun(AnarchyWatchObject):
             try:
                 await self.set_runner_state_pending()
             except Exception as e:
-                logging.exception("Error resetting {self} to pending after missing AnarcyhRunnerPod")
+                logging.exception(f"Error resetting {self} to pending after missing AnarcyhRunnerPod")
