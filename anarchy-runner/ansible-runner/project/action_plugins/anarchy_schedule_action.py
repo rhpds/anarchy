@@ -6,9 +6,17 @@
 from datetime import datetime, timedelta
 import os
 import re
+import time
 import requests
 
 from ansible.plugins.action import ActionBase
+from ansible.utils.display import Display
+
+display = Display()
+
+RETRY_COUNT = 3
+RETRY_DELAY = 5
+RETRY_BACKOFF = 2
 
 datetime_re = re.compile(r'^\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\dZ$')
 
@@ -59,15 +67,33 @@ class ActionModule(ActionBase):
                 result['message'] = 'Invalid value for `after`: {}'.format(after)
                 return result
 
-        response = requests.post(
-            anarchy_url + '/run/subject/' + anarchy_subject_name + '/actions',
-            headers={'Authorization': 'Bearer {}:{}:{}'.format(
-                anarchy_runner_name, anarchy_run_pod_name, anarchy_runner_token
-            )},
-            json=dict(action=action, after=after, cancel=cancel, vars=vars)
+        url = anarchy_url + '/run/subject/' + anarchy_subject_name + '/actions'
+        headers = {'Authorization': 'Bearer {}:{}:{}'.format(
+            anarchy_runner_name, anarchy_run_pod_name, anarchy_runner_token
+        )}
+        payload = dict(action=action, after=after, cancel=cancel, vars=vars)
+
+        last_exception = None
+        for attempt in range(1, RETRY_COUNT + 1):
+            try:
+                response = requests.post(url, headers=headers, json=payload)
+                response.raise_for_status()
+                response_json = response.json()
+                result['action'] = response_json['result']
+                result['failed'] = not response_json['success']
+                return result
+            except (requests.exceptions.RequestException, ValueError, KeyError) as e:
+                last_exception = e
+                display.warning(
+                    "anarchy_schedule_action {}: attempt {}/{} failed: {}".format(
+                        anarchy_subject_name, attempt, RETRY_COUNT, str(e)
+                    )
+                )
+                if attempt < RETRY_COUNT:
+                    time.sleep(RETRY_DELAY * (RETRY_BACKOFF ** (attempt - 1)))
+
+        result['failed'] = True
+        result['msg'] = "anarchy_schedule_action failed after {} attempts: {}".format(
+            RETRY_COUNT, str(last_exception)
         )
-
-        result['action'] = response.json()['result']
-        result['failed'] = not response.json()['success']
-
         return result
