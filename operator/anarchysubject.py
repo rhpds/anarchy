@@ -136,26 +136,67 @@ class AnarchySubject(AnarchyCachedKopfObject):
             }])
 
     async def add_run_to_status(self, anarchy_run):
-        if self.has_run_in_status(anarchy_run):
-            return
-        if not 'runs' in self.status:
-            await self.json_patch_status([{
-                "op": "add",
-                "path": f"/status/runs",
-                "value": {"active": [anarchy_run.as_reference()]},
-            }])
-        elif not 'active' in self.status['runs']:
-            await self.json_patch_status([{
-                "op": "add",
-                "path": f"/status/runs/active",
-                "value": [anarchy_run.as_reference()],
-            }])
-        else:
-            await self.json_patch_status([{
-                "op": "add",
-                "path": f"/status/runs/active/-",
-                "value": anarchy_run.as_reference(),
-            }])
+        while True:
+            try:
+                if self.has_run_in_status(anarchy_run):
+                    return
+                add_as_active = True
+                if not 'runs' in self.status:
+                    patch = [{
+                        "op": "test",
+                        "path": "/status/runs",
+                        "value": None,
+                    }, {
+                        "op": "add",
+                        "path": f"/status/runs",
+                        "value": {"active": [anarchy_run.as_reference()]},
+                    }]
+                elif not 'active' in self.status['runs']:
+                    patch = [{
+                        "op": "test",
+                        "path": "/status/runs/active",
+                        "value": None,
+                    }, {
+                        "op": "add",
+                        "path": f"/status/runs/active",
+                        "value": [anarchy_run.as_reference()],
+                    }]
+                elif len(self.status['runs']['active']) == 0:
+                    patch = [{
+                        "op": "test",
+                        "path": "/status/runs/active",
+                        "value": [],
+                    }, {
+                        "op": "add",
+                        "path": f"/status/runs/active/-",
+                        "value": anarchy_run.as_reference(),
+                    }]
+                else:
+                    add_as_active = False
+                    patch = [{
+                        "op": "test",
+                        "path": "/status/runs/active/0/name",
+                        "value": self.status['runs']['active'][0]['name'],
+                    }, {
+                        "op": "add",
+                        "path": f"/status/runs/active/-",
+                        "value": anarchy_run.as_reference(),
+                    }]
+                await self.json_patch_status(patch)
+                if add_as_active:
+                    logging.info("Added %s as active run for %s", anarchy_run, self)
+                else:
+                    logging.info("Added %s as queued run for %s", anarchy_run, self)
+                break
+            except kubernetes_asyncio.client.rest.ApiException as e:
+                if e.status == 422:
+                    # Refresh definition and retry
+                    await self.refresh()
+                elif e.status == 404:
+                    logging.warning(f"%s not found while attempting to add %s to status", self, anarchy_run)
+                    break
+                else:
+                    raise
 
     async def check_complete_delete(self):
         """
@@ -582,15 +623,21 @@ class AnarchySubject(AnarchyCachedKopfObject):
             }])
 
     async def remove_run_from_status(self, anarchy_run):
+        if not self.has_run_in_status(anarchy_run):
+            await self.refresh()
         if self.has_run_in_status(anarchy_run):
             try:
                 if anarchy_run.name == self.active_run_name:
+                    logging.info("Removing active %s from %s status", anarchy_run, self)
                     await self.remove_active_run_from_status(anarchy_run)
                 else:
+                    logging.info("Removing queued %s from %s status", anarchy_run, self)
                     await self.remove_queued_run_from_status(anarchy_run)
             except kubernetes_asyncio.client.rest.ApiException as e:
                 if e.status != 404:
                     raise
+        else:
+            logging.warning("%s was not found in %s status", anarchy_run, self)
 
     async def remove_active_run_from_status(self, anarchy_run):
         try:

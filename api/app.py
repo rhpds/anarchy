@@ -154,7 +154,7 @@ async def post_run(request):
         anarchy_runner_pod.consecutive_failure_count += 1
         await anarchy_run.set_runner_state_failed(result)
     elif result_status == 'successful':
-        logging.info(f"{anarchy_runner_pod} posted successful result for {anarchy_run}")
+        logging.info("%s posted successful result for %s", anarchy_runner_pod, anarchy_run)
         anarchy_runner_pod.consecutive_failure_count = 0
         await anarchy_run.set_runner_state_successful(result)
     else:

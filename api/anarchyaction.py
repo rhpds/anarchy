@@ -195,4 +195,4 @@ class AnarchyAction(VarSecretMixin, AnarchyObject):
                 }
             }
         )
-        logging.info("Created {anarchy_run} to process {self} {callback_name} callback")
+        logging.info("Created %s to process %s %s callback", anarchy_run, self, callback_name)
