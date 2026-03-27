@@ -90,7 +90,7 @@
     - _run.spec.handler.name == 'create'
     - _run.spec.handler.type == 'subjectEvent'
     - _run.spec.subject.name == 'test-simple-00-a'
-    - _run.spec.subject.vars == {"n": 1}
+    - '_run.spec.subject.vars == {"n": 1}'
 
 - name: Wait for AnarchyRun for create of AnarchySubject test-simple-00-a successful
   kubernetes.core.k8s_info:

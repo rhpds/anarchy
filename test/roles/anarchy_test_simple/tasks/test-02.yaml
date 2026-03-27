@@ -153,7 +153,7 @@
     - _run.spec.governor.name == 'test-simple-02'
     - _run.spec.handler.type == 'action'
     - _run.spec.subject.name == 'test-simple-02-a'
-    - _run.spec.subject.vars == {"n": 1}
+    - '_run.spec.subject.vars == {"n": 1}'
 
 - name: Wait for AnarchyRun for AnarcyhAction to be successful for test-simple-02-a
   kubernetes.core.k8s_info:

@@ -632,7 +632,8 @@
     _subject: "{{ r_get_test_simple_1.resources[0] | default({}) }}"
   failed_when: >-
     _subject.status.runStatus | default('') != 'failed' or
-    _subject.status.runStatusMessage | default('') != 'Failed run as requested'
+    _subject.status.runStatusMessage | default('') != 'localhost failed fail, Fail run: Failed run as requested'
+
   until: r_get_test_simple_1 is success
   retries: 10
   delay: 5

@@ -5,10 +5,18 @@
 
 import os
 import re
+import time
 import requests
 
 from ansible.plugins.action import ActionBase
 from ansible.module_utils.parsing.convert_bool import boolean
+from ansible.utils.display import Display
+
+display = Display()
+
+RETRY_COUNT = 3
+RETRY_DELAY = 5
+RETRY_BACKOFF = 2
 
 class ActionModule(ActionBase):
     def run(self, tmp=None, task_vars=None, **_):
@@ -30,14 +38,33 @@ class ActionModule(ActionBase):
         if boolean(module_args.get('skip_update_processing', False), strict=False):
             patch['skip_update_processing'] = True
 
-        response = requests.patch(
-            anarchy_url + '/run/subject/' + anarchy_subject_name,
-            headers={'Authorization': 'Bearer {}:{}:{}'.format(
-                anarchy_runner_name, anarchy_run_pod_name, anarchy_runner_token
-            )},
-            json=dict(patch=patch)
-        )
-        result['subject'] = response.json()['result']
-        result['failed'] = not response.json()['success']
+        url = anarchy_url + '/run/subject/' + anarchy_subject_name
+        headers = {'Authorization': 'Bearer {}:{}:{}'.format(
+            anarchy_runner_name, anarchy_run_pod_name, anarchy_runner_token
+        )}
+        payload = dict(patch=patch)
 
+        last_exception = None
+        for attempt in range(1, RETRY_COUNT + 1):
+            try:
+                response = requests.patch(url, headers=headers, json=payload)
+                response.raise_for_status()
+                response_json = response.json()
+                result['subject'] = response_json['result']
+                result['failed'] = not response_json['success']
+                return result
+            except (requests.exceptions.RequestException, ValueError, KeyError) as e:
+                last_exception = e
+                display.warning(
+                    "anarchy_subject_update {}: attempt {}/{} failed: {}".format(
+                        anarchy_subject_name, attempt, RETRY_COUNT, str(e)
+                    )
+                )
+                if attempt < RETRY_COUNT:
+                    time.sleep(RETRY_DELAY * (RETRY_BACKOFF ** (attempt - 1)))
+
+        result['failed'] = True
+        result['msg'] = "anarchy_subject_update failed after {} attempts: {}".format(
+            RETRY_COUNT, str(last_exception)
+        )
         return result
