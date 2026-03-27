@@ -136,7 +136,11 @@ class AnarchySubject(AnarchyCachedKopfObject):
             }])
 
     async def add_run_to_status(self, anarchy_run):
-        while True:
+        """Add AnarchyRun reference to AnarchySubject status"""
+        # Attempt to add AnarchyRun to status with retries in case the state of
+        # the AnarchySubject in memory is out of sync with etcd.
+        max_retries = 10
+        for attempt in range(max_retries):
             try:
                 if self.has_run_in_status(anarchy_run):
                     return
@@ -187,16 +191,20 @@ class AnarchySubject(AnarchyCachedKopfObject):
                     logging.info("Added %s as active run for %s", anarchy_run, self)
                 else:
                     logging.info("Added %s as queued run for %s", anarchy_run, self)
-                break
+                return
             except kubernetes_asyncio.client.rest.ApiException as e:
                 if e.status == 422:
-                    # Refresh definition and retry
+                    # Refresh AnachySubject state and retry
                     await self.refresh()
                 elif e.status == 404:
-                    logging.warning(f"%s not found while attempting to add %s to status", self, anarchy_run)
-                    break
+                    logging.warning("%s not found while attempting to add %s to status", self, anarchy_run)
+                    return
                 else:
                     raise
+        raise kopf.TemporaryError(
+            "Failed to add %s to %s status after %s retries",
+            anarchy_run, self, max_retries,
+        )
 
     async def check_complete_delete(self):
         """
@@ -587,20 +595,33 @@ class AnarchySubject(AnarchyCachedKopfObject):
             await self.json_patch_status(patch)
 
     async def remove_action_from_status(self, anarchy_action):
-        while True:
+        """Remove AnarchyAction reference from AnarchySubject status"""
+        # Remove reference to AnarchyAction with retries in case the state of
+        # the AnarchySubject in memory is out of sync with etcd.
+        max_retries = 10
+        for attempt in range(max_retries):
             try:
                 patch = []
                 if anarchy_action.name == self.active_action_name:
-                    patch.append({
+                    patch.extend([{
+                        "op": "test",
+                        "path": "/status/activeAction/name",
+                        "value": anarchy_action.name,
+                    }, {
                         "op": "remove",
                         "path": "/status/activeAction",
-                    })
+                    }])
                 else:
                     for i, item in enumerate(self.pending_actions):
                         if item['name'] == anarchy_action.name:
                             patch.insert(0, {
                                 "op": "remove",
                                 "path": f"/status/pendingActions/{i}",
+                            })
+                            patch.insert(0, {
+                                "op": "test",
+                                "path": "f/status/pendingActions/{i}/name",
+                                "value": anarchy_action.name
                             })
                 if patch:
                     await self.json_patch_status(patch)
@@ -611,6 +632,10 @@ class AnarchySubject(AnarchyCachedKopfObject):
                 elif e.status != 404:
                     logging.error(f"Failed to apply {patch} to {self}")
                     raise
+        raise kopf.TemporaryError(
+            "Failed to remove %s from %s status after %s retries",
+            anarchy_action, self, max_retries,
+        )
 
     async def remove_anarchy_finalizers(self):
         """
@@ -700,12 +725,16 @@ class AnarchySubject(AnarchyCachedKopfObject):
         })
 
     async def set_active_run_pending(self):
+        """Trigger management of top active AnarchyRun to trigger it switching
+        to pending state.
+
+        If deletion has been initiated then any active AnarchyRuns that are not
+        related to delete handling are removed from active status first."""
         while True:
             if not self.active_run_name:
                 return
             try:
                 anarchy_run = await anarchyrun.AnarchyRun.get(self.active_run_name)
-
                 if self.is_deleting \
                 and not anarchy_run.is_delete_handler:
                     await anarchy_run.set_to_canceled()
