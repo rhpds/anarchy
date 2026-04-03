@@ -187,11 +187,7 @@ class AnarchySubject(AnarchyCachedKopfObject):
                         "value": anarchy_run.as_reference(),
                     }]
                 await self.json_patch_status(patch)
-                if add_as_active:
-                    logging.info("Added %s as active run for %s", anarchy_run, self)
-                else:
-                    logging.info("Added %s as queued run for %s", anarchy_run, self)
-                return
+                break
             except kubernetes_asyncio.client.rest.ApiException as e:
                 if e.status == 422:
                     # Refresh AnachySubject state and retry
@@ -201,10 +197,16 @@ class AnarchySubject(AnarchyCachedKopfObject):
                     return
                 else:
                     raise
-        raise kopf.TemporaryError(
-            "Failed to add %s to %s status after %s retries",
-            anarchy_run, self, max_retries,
-        )
+        else:
+            raise kopf.TemporaryError(
+                "Failed to add %s to %s status after %s retries",
+                anarchy_run, self, max_retries,
+            )
+        if add_as_active:
+            logging.info("Added %s as active run for %s", anarchy_run, self)
+            await self.set_active_run_pending()
+        else:
+            logging.info("Added %s as queued run for %s", anarchy_run, self)
 
     async def check_complete_delete(self):
         """
@@ -647,45 +649,20 @@ class AnarchySubject(AnarchyCachedKopfObject):
                 "path": f"/metadata/finalizers/{self.finalizers.index(Anarchy.subject_label)}",
             }])
 
-    async def remove_run_from_status(self, anarchy_run):
+    async def remove_run_from_status(self, anarchy_run) -> None:
+        # Suspicious if AnarchyRun is not in status, refresh object from API to be sure.
         if not self.has_run_in_status(anarchy_run):
             await self.refresh()
-        if self.has_run_in_status(anarchy_run):
-            try:
-                if anarchy_run.name == self.active_run_name:
-                    logging.info("Removing active %s from %s status", anarchy_run, self)
-                    await self.remove_active_run_from_status(anarchy_run)
-                else:
-                    logging.info("Removing queued %s from %s status", anarchy_run, self)
-                    await self.remove_queued_run_from_status(anarchy_run)
-            except kubernetes_asyncio.client.rest.ApiException as e:
-                if e.status != 404:
-                    raise
-        else:
-            logging.warning("%s was not found in %s status", anarchy_run, self)
-
-    async def remove_active_run_from_status(self, anarchy_run):
-        try:
-            await self.json_patch_status([{
-                "op": "test",
-                "path": f"/status/runs/active/0/name",
-                "value": anarchy_run.name,
-            }, {
-                "op": "remove",
-                "path": f"/status/runs/active/0",
-            }])
-        except kubernetes_asyncio.client.rest.ApiException as e:
-            if e.status == 404:
-                return
-            else:
-                raise
-        await self.set_active_run_pending()
-
-    async def remove_queued_run_from_status(self, anarchy_run):
-        try:
+        # Loop until consistent
+        while True:
             patch = []
+            removed_active_run = False
+            # Loop over status runs entries building patch to remove run.
+            # It should only occur once, but err on the side of caution by checking the whole list.
             for i, entry in enumerate(self.status['runs']['active']):
                 if entry['name'] == anarchy_run.name:
+                    if i == 0:
+                        removed_active_run = True
                     patch.insert(0, {
                         "op": "remove",
                         "path": f"/status/runs/active/{i}",
@@ -695,12 +672,28 @@ class AnarchySubject(AnarchyCachedKopfObject):
                         "path": f"/status/runs/active/{i}/name",
                         "value": anarchy_run.name,
                     })
-            if patch:
-                await self.json_patch_status(patch)
-        except kubernetes_asyncio.client.rest.ApiException as e:
-            if e.status == 404:
+            # Odd to attempt to remove run that isn't in status, report this condition.
+            if len(patch) == 0:
+                logging.warning("%s was not found in %s status", anarchy_run, self)
                 return
-            raise
+            try:
+                await self.json_patch_status(patch)
+            except kubernetes_asyncio.client.rest.ApiException as e:
+                # 404 indicates run was being removed because subject was also being deleted.
+                if e.status == 404:
+                    return
+                if e.status == 422:
+                    # Patch failed test condition, must be out of sync
+                    await self.refresh()
+                else:
+                    raise
+            break
+
+        if removed_active_run:
+            logging.info("Removed active %s from %s status", anarchy_run, self)
+            await self.set_active_run_pending()
+        else:
+            logging.info("Removed queued %s from %s status", anarchy_run, self)
 
     async def remove_finalizers(self):
         await self.merge_patch({
