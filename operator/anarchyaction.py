@@ -193,7 +193,6 @@ class AnarchyAction(AnarchyCachedKopfObject):
             await anarchy_subject.add_action_to_status(self)
 
     async def handle_update(self, anarchy_subject):
-        anarchy_subject = await self.get_subject()
         if self.is_finished:
             if anarchy_subject.has_action_in_status(self):
                 logging.info(f"{self} finished")
