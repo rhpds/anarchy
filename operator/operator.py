@@ -402,8 +402,13 @@ async def run_daemon(stopped, **kwargs):
 
     try:
         while not stopped:
-            await anarchy_run.refresh()
-            await anarchy_subject.refresh()
+            try:
+                await anarchy_run.refresh()
+                await anarchy_subject.refresh()
+            except kubernetes_asyncio.client.rest.ApiException as err:
+                if err.status == 404:
+                    return
+                raise
             if anarchy_run.ignore or anarchy_subject.ignore:
                 return
             if anarchy_action:
