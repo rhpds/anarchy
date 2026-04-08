@@ -1,13 +1,16 @@
 import json
-import kopf
-import kubernetes_asyncio
-import logging
 import os
 
-class Anarchy():
+import kubernetes_asyncio
+from metrics import TimerDecoratorMeta
+
+
+class Anarchy(metaclass=TimerDecoratorMeta):
     action_check_interval = int(os.environ.get('ACTION_CHECK_INTERVAL', 3))
     cleanup_interval = int(os.environ.get('CLEANUP_INTERVAL', 60))
     domain = os.environ.get('ANARCHY_DOMAIN', 'anarchy.gpte.redhat.com')
+    metrics_enabled = os.environ.get('METRICS_ENABLED', 'true').lower() == 'true'
+    metrics_port = int(os.environ.get('METRICS_PORT', 9091))
     run_check_interval = int(os.environ.get('RUN_CHECK_INTERVAL', 3))
     running_all_in_one = 'true' == os.environ.get('ANARCHY_RUNNING_ALL_IN_ONE', '')
     version = os.environ.get('ANARCHY_VERSION', 'v1')

@@ -1,9 +1,10 @@
 import kopf
 import kubernetes_asyncio
-
 from anarchy import Anarchy
+from metrics import TimerDecoratorMeta
 
-class AnarchyKopfObject:
+
+class AnarchyKopfObject(metaclass=TimerDecoratorMeta):
     @classmethod
     def from_definition(cls, definition):
         metadata = definition['metadata']

@@ -31,6 +31,10 @@ spec:
         env:
         - name: ANARCHY_SERVICE
           value: {{ include "anarchy.name" $ }}
+        {{- if $.Values.metrics.enabled }}
+        - name: METRICS_ENABLED
+          value: "true"
+        {{- end }}
         {{- range $k, $v := $namespace.envVars | default $.Values.envVars }}
         - name: {{ $k | quote }}
           value: {{ $v | quote }}
@@ -41,6 +45,11 @@ spec:
         image: {{ $.Values.image.repository }}:v{{ $.Chart.AppVersion }}
         {{- end }}
         imagePullPolicy: {{ $.Values.image.pullPolicy }}
+        ports:
+        - name: kopf
+          containerPort: 8080
+        - name: metrics
+          containerPort: 9091
         livenessProbe:
           httpGet:
             path: /healthz

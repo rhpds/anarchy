@@ -1,23 +1,28 @@
 #!/usr/bin/env python
 
 import asyncio
-import kopf
-import kubernetes_asyncio
 import logging
 
+import kopf
+import kubernetes_asyncio
 from anarchy import Anarchy
-from anarchygovernor import AnarchyGovernor
-from anarchysubject import AnarchySubject
 from anarchyaction import AnarchyAction
+from anarchygovernor import AnarchyGovernor
 from anarchyrun import AnarchyRun
 from anarchyrunner import AnarchyRunner
+from anarchysubject import AnarchySubject
 from configure_kopf_logging import configure_kopf_logging
 from infinite_relative_backoff import InfiniteRelativeBackoff
+from metrics import MetricsService
+
 
 @kopf.on.startup()
 async def on_startup(settings: kopf.OperatorSettings, logger, **_):
     await Anarchy.on_startup()
     await AnarchyGovernor.preload()
+
+    if Anarchy.metrics_enabled:
+        await MetricsService.start(port=Anarchy.metrics_port)
 
     # Never give up from network errors
     settings.networking.error_backoffs = InfiniteRelativeBackoff()
@@ -42,6 +47,7 @@ async def on_startup(settings: kopf.OperatorSettings, logger, **_):
 @kopf.on.cleanup()
 async def on_cleanup(**_):
     await Anarchy.on_cleanup()
+    await MetricsService.stop()
 
 @kopf.on.event(Anarchy.domain, Anarchy.version, 'anarchygovernors')
 async def governor_event(event, logger, **_):

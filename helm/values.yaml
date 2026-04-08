@@ -53,6 +53,7 @@ service:
   type: ClusterIP
   port:
     api: 5000
+    metrics: 9091
 
 ingress:
   enabled: false
@@ -73,6 +74,10 @@ nodeSelector: {}
 tolerations: []
 
 affinity: {}
+
+metrics:
+  enabled: true
+  username: metrics
 
 runners:
   default:
