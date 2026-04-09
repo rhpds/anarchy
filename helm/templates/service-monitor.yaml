@@ -9,7 +9,7 @@ metadata:
 spec:
   selector:
     matchLabels:
-      {{- include "anarchy.selectorLabels" . | nindent 6 }}
+      {{- include "anarchy.operatorComponentLabels" . | nindent 6 }}
   namespaceSelector:
     matchNames:
     - {{ .Values.namespace.name }}

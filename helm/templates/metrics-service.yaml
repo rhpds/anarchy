@@ -1,0 +1,19 @@
+{{- if (and .Values.deploy .Values.metrics.enabled) -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "anarchy.name" . }}-metrics
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "anarchy.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+spec:
+  type: ClusterIP
+  ports:
+  - name: metrics
+    protocol: TCP
+    port: 9091
+    targetPort: 9091
+  selector:
+    {{- include "anarchy.operatorComponentLabels" . | nindent 4 }}
+{{- end }}
