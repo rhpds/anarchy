@@ -2,8 +2,18 @@ apiVersion: v1
 entries:
   anarchy:
   - apiVersion: v2
+    appVersion: 0.25.12
+    created: "2026-04-10T22:41:53.158067468Z"
+    description: Anarchy Operator
+    digest: 324cc19178922a19f60ebdae696b2c13baf1ead1413f3d29b80e498c24f14aba
+    name: anarchy
+    type: application
+    urls:
+    - https://redhat-cop.github.io/anarchy/anarchy-0.25.12.tgz
+    version: 0.25.12
+  - apiVersion: v2
     appVersion: 0.25.11
-    created: "2026-04-10T20:17:34.055164196Z"
+    created: "2026-04-10T22:41:53.156837818Z"
     description: Anarchy Operator
     digest: cb4ea67e95d9b52a91ac80dd292de91192da9e6d59d624d6366f1302c2d317a7
     name: anarchy
@@ -13,7 +23,7 @@ entries:
     version: 0.25.11
   - apiVersion: v2
     appVersion: 0.25.10
-    created: "2026-04-10T20:17:34.053714556Z"
+    created: "2026-04-10T22:41:53.156174704Z"
     description: Anarchy Operator
     digest: 33a64e77e6367363e70ae56ccd6ff76c6b602caf1e9d1f619df63f9674a9f719
     name: anarchy
@@ -23,7 +33,7 @@ entries:
     version: 0.25.10
   - apiVersion: v2
     appVersion: 0.25.9
-    created: "2026-04-10T20:17:34.061015926Z"
+    created: "2026-04-10T22:41:53.163430276Z"
     description: Anarchy Operator
     digest: a2111830e21e52e5be223204a04a8e81d0eb3ffa2b063003e9c2759ca75866bd
     name: anarchy
@@ -33,7 +43,7 @@ entries:
     version: 0.25.9
   - apiVersion: v2
     appVersion: 0.25.8
-    created: "2026-04-10T20:17:34.060321227Z"
+    created: "2026-04-10T22:41:53.162769847Z"
     description: Anarchy Operator
     digest: a3c0b1c1a66e14a34088b98cfe8c701ce1cde47734dd84cb87ad4249e539f991
     name: anarchy
@@ -43,7 +53,7 @@ entries:
     version: 0.25.8
   - apiVersion: v2
     appVersion: 0.25.7
-    created: "2026-04-10T20:17:34.059603072Z"
+    created: "2026-04-10T22:41:53.162110409Z"
     description: Anarchy Operator
     digest: ef4375a46fbc431fb517ad4ac4cd2a5623699c002d449934136c4c091de5ebe4
     name: anarchy
@@ -53,7 +63,7 @@ entries:
     version: 0.25.7
   - apiVersion: v2
     appVersion: 0.25.6
-    created: "2026-04-10T20:17:34.058822372Z"
+    created: "2026-04-10T22:41:53.161472612Z"
     description: Anarchy Operator
     digest: 0776a8aa2638c90304144018cc2dc769c5ccd834ddce5361a0776da483286519
     name: anarchy
@@ -63,7 +73,7 @@ entries:
     version: 0.25.6
   - apiVersion: v2
     appVersion: 0.25.5
-    created: "2026-04-10T20:17:34.058087672Z"
+    created: "2026-04-10T22:41:53.160839794Z"
     description: Anarchy Operator
     digest: c1fbad1300d3a9ba753136ea10fc9aa590e713b35c26d48a7ef16c43e75cc657
     name: anarchy
@@ -73,7 +83,7 @@ entries:
     version: 0.25.5
   - apiVersion: v2
     appVersion: 0.25.4
-    created: "2026-04-10T20:17:34.057444701Z"
+    created: "2026-04-10T22:41:53.160173774Z"
     description: Anarchy Operator
     digest: e9deea1df495adad9d092b810623db9d53f60b0efa1e9e687bcc521d41ad5cd0
     name: anarchy
@@ -83,7 +93,7 @@ entries:
     version: 0.25.4
   - apiVersion: v2
     appVersion: 0.25.3
-    created: "2026-04-10T20:17:34.056752806Z"
+    created: "2026-04-10T22:41:53.159564219Z"
     description: Anarchy Operator
     digest: def6ea1876a874b3cc0d99037af094350183392f9c0475716b874931da15227f
     name: anarchy
@@ -93,7 +103,7 @@ entries:
     version: 0.25.3
   - apiVersion: v2
     appVersion: 0.25.2
-    created: "2026-04-10T20:17:34.056064326Z"
+    created: "2026-04-10T22:41:53.158904631Z"
     description: Anarchy Operator
     digest: 7c62c87ac3686b4a93c4415b5021bda455cc911ed0c3c7dc62f3c28f949d7507
     name: anarchy
@@ -103,7 +113,7 @@ entries:
     version: 0.25.2
   - apiVersion: v2
     appVersion: 0.25.1
-    created: "2026-04-10T20:17:34.053018184Z"
+    created: "2026-04-10T22:41:53.155535895Z"
     description: Anarchy Operator
     digest: ddef06567e52657e4fd1d9a080ed5446f05cb8ec88037380fd626abf9afe4213
     name: anarchy
@@ -113,7 +123,7 @@ entries:
     version: 0.25.1
   - apiVersion: v2
     appVersion: 0.25.0
-    created: "2026-04-10T20:17:34.052354862Z"
+    created: "2026-04-10T22:41:53.154907124Z"
     description: Anarchy Operator
     digest: f461a2b962bee1f8792083ade6eb4d6d4b56533d2a5ad2981bfe91884f5e001e
     name: anarchy
@@ -123,7 +133,7 @@ entries:
     version: 0.25.0
   - apiVersion: v2
     appVersion: 0.24.5
-    created: "2026-04-10T20:17:34.051709557Z"
+    created: "2026-04-10T22:41:53.154246494Z"
     description: Anarchy Operator
     digest: be7df4e9c794e52366e3f8d4c77dadf7e797c0d77d364c7ab8888eedc97fb0d4
     name: anarchy
@@ -133,7 +143,7 @@ entries:
     version: 0.24.5
   - apiVersion: v2
     appVersion: 0.24.3
-    created: "2026-04-10T20:17:34.051051382Z"
+    created: "2026-04-10T22:41:53.15361563Z"
     description: Anarchy Operator
     digest: 55011edb559bba516b64784bac51ad5f13f2614d4fb7be845ff846cab1ee5cb9
     name: anarchy
@@ -143,7 +153,7 @@ entries:
     version: 0.24.3
   - apiVersion: v2
     appVersion: 0.24.2
-    created: "2026-04-10T20:17:34.050408481Z"
+    created: "2026-04-10T22:41:53.15298161Z"
     description: Anarchy Operator
     digest: 25366a542865c96acb4371149c82e77cf1d133942bbbfe41481516ef221e7b2f
     name: anarchy
@@ -153,7 +163,7 @@ entries:
     version: 0.24.2
   - apiVersion: v2
     appVersion: 0.24.1
-    created: "2026-04-10T20:17:34.049736937Z"
+    created: "2026-04-10T22:41:53.152334865Z"
     description: Anarchy Operator
     digest: e05d14a66c0f421197fcc4e0428c189dff455caf5ed9f7f5315e7b862e610f54
     name: anarchy
@@ -163,7 +173,7 @@ entries:
     version: 0.24.1
   - apiVersion: v2
     appVersion: 0.24.0
-    created: "2026-04-10T20:17:34.049012983Z"
+    created: "2026-04-10T22:41:53.151666311Z"
     description: Anarchy Operator
     digest: fe6d3c1f080562e3fd303bd7144c403bfae3d1d85e5b87331f7e925245a90b94
     name: anarchy
@@ -173,7 +183,7 @@ entries:
     version: 0.24.0
   - apiVersion: v2
     appVersion: 0.23.2
-    created: "2026-04-10T20:17:34.048235689Z"
+    created: "2026-04-10T22:41:53.150481678Z"
     description: Anarchy Operator
     digest: 50a279512c36c8d49316efdee343602e936681206aa6918e0951ecbdf339abb6
     name: anarchy
@@ -183,7 +193,7 @@ entries:
     version: 0.23.2
   - apiVersion: v2
     appVersion: 0.23.1
-    created: "2026-04-10T20:17:34.046917653Z"
+    created: "2026-04-10T22:41:53.149598493Z"
     description: Anarchy Operator
     digest: 3ba18e40d83b2d2c53def2509cf66df1ef5567d65443cacf06b13746b4113012
     name: anarchy
@@ -193,7 +203,7 @@ entries:
     version: 0.23.1
   - apiVersion: v2
     appVersion: 0.23.0
-    created: "2026-04-10T20:17:34.046403226Z"
+    created: "2026-04-10T22:41:53.1490865Z"
     description: Anarchy Operator
     digest: af25aab422b92f16e9fa6bc2541ec74b96beb4c77ed534f9f0acf3703f63942d
     name: anarchy
@@ -203,7 +213,7 @@ entries:
     version: 0.23.0
   - apiVersion: v2
     appVersion: 0.22.4
-    created: "2026-04-10T20:17:34.045866285Z"
+    created: "2026-04-10T22:41:53.148597951Z"
     description: Anarchy Operator
     digest: 52000b12a11af6bf74fcb0f0139a8d8433709d745342efae2dfdfdb3d99549db
     name: anarchy
@@ -213,7 +223,7 @@ entries:
     version: 0.22.4
   - apiVersion: v2
     appVersion: 0.22.3
-    created: "2026-04-10T20:17:34.045342233Z"
+    created: "2026-04-10T22:41:53.148085316Z"
     description: Anarchy Operator
     digest: bb3fa96891cb2fec4a4cacdecb78ee058eec8148665acd946ca47cf686d5c170
     name: anarchy
@@ -223,7 +233,7 @@ entries:
     version: 0.22.3
   - apiVersion: v2
     appVersion: 0.22.2
-    created: "2026-04-10T20:17:34.044805112Z"
+    created: "2026-04-10T22:41:53.147601927Z"
     description: Anarchy Operator
     digest: 840db85b12194d6ec0c37a3777274e400facecdfce2833f49c2c3a0aaca7f275
     name: anarchy
@@ -233,7 +243,7 @@ entries:
     version: 0.22.2
   - apiVersion: v2
     appVersion: 0.22.1
-    created: "2026-04-10T20:17:34.044238506Z"
+    created: "2026-04-10T22:41:53.147082299Z"
     description: Anarchy Operator
     digest: ad47ca9c7143cccf5dfe3667d7ce8e0739b8aae151f21b658d2793ec237ebee1
     name: anarchy
@@ -243,7 +253,7 @@ entries:
     version: 0.22.1
   - apiVersion: v2
     appVersion: 0.22.0
-    created: "2026-04-10T20:17:34.043702636Z"
+    created: "2026-04-10T22:41:53.14659407Z"
     description: Anarchy Operator
     digest: 7ef956099a120e7afdc5187290682e1764af4cb59ffc3b4e869a6ed8e84aedbb
     name: anarchy
@@ -253,7 +263,7 @@ entries:
     version: 0.22.0
   - apiVersion: v2
     appVersion: 0.21.1
-    created: "2026-04-10T20:17:34.043156311Z"
+    created: "2026-04-10T22:41:53.146076427Z"
     description: Anarchy Operator
     digest: 1a852d11fe83ee2a71ba47b22f6acf8b6d1c806b0e3105338ba178acfe405ddd
     name: anarchy
@@ -263,7 +273,7 @@ entries:
     version: 0.21.1
   - apiVersion: v2
     appVersion: 0.21.0
-    created: "2026-04-10T20:17:34.042615394Z"
+    created: "2026-04-10T22:41:53.14557348Z"
     description: Anarchy Operator
     digest: 75bedfe9bd7c2de71231a31c7c9502b982370469b20cd02a7f3bff77e068f510
     name: anarchy
@@ -273,7 +283,7 @@ entries:
     version: 0.21.0
   - apiVersion: v2
     appVersion: 0.20.0
-    created: "2026-04-10T20:17:34.042008727Z"
+    created: "2026-04-10T22:41:53.144946032Z"
     description: Anarchy Operator
     digest: aea4791e40f012242f8de072d29853b0e8d95e613b684ad44cb11e311609dc8b
     name: anarchy
@@ -283,7 +293,7 @@ entries:
     version: 0.20.0
   - apiVersion: v2
     appVersion: 0.19.4
-    created: "2026-04-10T20:17:34.041260602Z"
+    created: "2026-04-10T22:41:53.143687357Z"
     description: Anarchy Operator
     digest: 9eacc8cd4a15dad79f397b42b2eb82d4ea8eaab41ef03ef2ab86819e416eb18f
     name: anarchy
@@ -293,7 +303,7 @@ entries:
     version: 0.19.4
   - apiVersion: v2
     appVersion: 0.18.3
-    created: "2026-04-10T20:17:34.040157745Z"
+    created: "2026-04-10T22:41:53.142961516Z"
     description: Anarchy Operator
     digest: a53fe52956c09450f3126870a3bde7d4f89373cfd35b9e13da2fd28bc5838f3e
     name: anarchy
@@ -303,7 +313,7 @@ entries:
     version: 0.18.3
   - apiVersion: v2
     appVersion: 0.18.2
-    created: "2026-04-10T20:17:34.039646874Z"
+    created: "2026-04-10T22:41:53.142470813Z"
     description: Anarchy Operator
     digest: f26cb7e84703036e3307821e09c41403b0af1e581ec6e7be4c1d73d23745cad9
     name: anarchy
@@ -313,7 +323,7 @@ entries:
     version: 0.18.2
   - apiVersion: v2
     appVersion: 0.18.1
-    created: "2026-04-10T20:17:34.039100438Z"
+    created: "2026-04-10T22:41:53.141942409Z"
     description: Anarchy Operator
     digest: 645e56836226d8a919941be7260cb51abf55ae3e427ee73c5e07cccfb35e10ea
     name: anarchy
@@ -323,7 +333,7 @@ entries:
     version: 0.18.1
   - apiVersion: v2
     appVersion: 0.17.17
-    created: "2026-04-10T20:17:34.038574053Z"
+    created: "2026-04-10T22:41:53.141452727Z"
     description: Anarchy Operator
     digest: 9aa6bdcbfa46f01268a4c1f0867b1c4e0cb345529c3f0a6b1d409878b6607170
     name: anarchy
@@ -333,7 +343,7 @@ entries:
     version: 0.17.17
   - apiVersion: v2
     appVersion: 0.16.25
-    created: "2026-04-10T20:17:34.033419536Z"
+    created: "2026-04-10T22:41:53.136612924Z"
     description: Anarchy Operator
     digest: f565d586530088fba7c0f330f9e0a57e490a6f528b3b5238e2ef9f0b6565348b
     name: anarchy
@@ -343,7 +353,7 @@ entries:
     version: 0.16.25
   - apiVersion: v2
     appVersion: 0.16.24
-    created: "2026-04-10T20:17:34.03286589Z"
+    created: "2026-04-10T22:41:53.136044606Z"
     description: Anarchy Operator
     digest: 10956da520fa69cd8a4fcf8b22b923fd78fb1565382c8ee2066b87d1a3407e2f
     name: anarchy
@@ -353,7 +363,7 @@ entries:
     version: 0.16.24
   - apiVersion: v2
     appVersion: 0.16.20
-    created: "2026-04-10T20:17:34.032289789Z"
+    created: "2026-04-10T22:41:53.135558661Z"
     description: Anarchy Operator
     digest: 10d4969eb3ba613282d6c102017d4c3e2f79720a30777795d5a5eff692c08d77
     name: anarchy
@@ -363,7 +373,7 @@ entries:
     version: 0.16.20
   - apiVersion: v2
     appVersion: 0.16.12
-    created: "2026-04-10T20:17:34.031109576Z"
+    created: "2026-04-10T22:41:53.134402208Z"
     description: Anarchy Operator
     digest: f2badd53bcfc95e325b955a819bef14c46e5f0b9ce04ed814e0ee767944ce217
     name: anarchy
@@ -373,7 +383,7 @@ entries:
     version: 0.16.12
   - apiVersion: v2
     appVersion: 0.16.11
-    created: "2026-04-10T20:17:34.030577853Z"
+    created: "2026-04-10T22:41:53.133822339Z"
     description: Anarchy Operator
     digest: 6541e46fbc9394a83ecf0811dd1bb9f5603ec8bdebb1282e3b6e577b969cf953
     name: anarchy
@@ -383,7 +393,7 @@ entries:
     version: 0.16.11
   - apiVersion: v2
     appVersion: 0.16.10
-    created: "2026-04-10T20:17:34.030018248Z"
+    created: "2026-04-10T22:41:53.133209468Z"
     description: Anarchy Operator
     digest: 745705c85784737467d8b1d56a7b106b7eaa79af800ede2408937ab1d9385fef
     name: anarchy
@@ -393,7 +403,7 @@ entries:
     version: 0.16.10
   - apiVersion: v2
     appVersion: 0.16.9
-    created: "2026-04-10T20:17:34.038011714Z"
+    created: "2026-04-10T22:41:53.14093868Z"
     description: Anarchy Operator
     digest: 6e383546822ed8cda66f7604e46e86137c28ee1c32b6790353bb0c4193542aed
     name: anarchy
@@ -403,7 +413,7 @@ entries:
     version: 0.16.9
   - apiVersion: v2
     appVersion: 0.16.8
-    created: "2026-04-10T20:17:34.037480461Z"
+    created: "2026-04-10T22:41:53.140451583Z"
     description: Anarchy Operator
     digest: a3940e56493f65c43117e4f99eda36a947dd5a23b5c58313a87815797588f726
     name: anarchy
@@ -413,7 +423,7 @@ entries:
     version: 0.16.8
   - apiVersion: v2
     appVersion: 0.16.7
-    created: "2026-04-10T20:17:34.036902197Z"
+    created: "2026-04-10T22:41:53.139939881Z"
     description: Anarchy Operator
     digest: 6b6ca6cb2888d41a6aeb3480d8f42b9b10b27c71419364df02855b477ac9e869
     name: anarchy
@@ -423,7 +433,7 @@ entries:
     version: 0.16.7
   - apiVersion: v2
     appVersion: 0.16.6
-    created: "2026-04-10T20:17:34.036346308Z"
+    created: "2026-04-10T22:41:53.139446222Z"
     description: Anarchy Operator
     digest: aed5a6cd4b6c46404e3d26af4047bfe691261bdd8be252c69d8047d83f2f3439
     name: anarchy
@@ -433,7 +443,7 @@ entries:
     version: 0.16.6
   - apiVersion: v2
     appVersion: 0.16.5
-    created: "2026-04-10T20:17:34.035768895Z"
+    created: "2026-04-10T22:41:53.138874908Z"
     description: Anarchy Operator
     digest: b0f8bb4b7794974bd9c9651b11b05375f600ebc653679b8c5a75dd9a4a981cc8
     name: anarchy
@@ -443,7 +453,7 @@ entries:
     version: 0.16.5
   - apiVersion: v2
     appVersion: 0.16.4
-    created: "2026-04-10T20:17:34.035225474Z"
+    created: "2026-04-10T22:41:53.138359088Z"
     description: Anarchy Operator
     digest: e5c2ae3d2e2913bd449252a47f1ca957e7f3b7aa06aab180d8b9b2d24bc1ee57
     name: anarchy
@@ -453,7 +463,7 @@ entries:
     version: 0.16.4
   - apiVersion: v2
     appVersion: 0.16.3
-    created: "2026-04-10T20:17:34.034479327Z"
+    created: "2026-04-10T22:41:53.137318637Z"
     description: Anarchy Operator
     digest: 8adeaac841a819279d78b133f30159065afbd6ba41fcf402b3082123d44c4a10
     name: anarchy
@@ -463,7 +473,7 @@ entries:
     version: 0.16.3
   - apiVersion: v2
     appVersion: 0.16.2
-    created: "2026-04-10T20:17:34.03166804Z"
+    created: "2026-04-10T22:41:53.134892351Z"
     description: Anarchy Operator
     digest: 5c253dadf7c4f43b390597861b1a215dda4be891cbb433161d52f8f5ba182bc3
     name: anarchy
@@ -473,7 +483,7 @@ entries:
     version: 0.16.2
   - apiVersion: v2
     appVersion: 0.16.1
-    created: "2026-04-10T20:17:34.029486234Z"
+    created: "2026-04-10T22:41:53.132616314Z"
     description: Anarchy Operator
     digest: 1f8a86723fb973115c0837a126c0268be9aa0b7dfc991b4e6a80c1ed181087e6
     name: anarchy
@@ -483,7 +493,7 @@ entries:
     version: 0.16.1
   - apiVersion: v2
     appVersion: 0.15.1
-    created: "2026-04-10T20:17:34.028914771Z"
+    created: "2026-04-10T22:41:53.131998263Z"
     description: Anarchy Operator
     digest: cb80482c97f4d45743fb27692854f0bb50284a0273b79eb2e3eee8b095c0db92
     name: anarchy
@@ -493,7 +503,7 @@ entries:
     version: 0.15.1
   - apiVersion: v2
     appVersion: 0.15.0
-    created: "2026-04-10T20:17:34.028350448Z"
+    created: "2026-04-10T22:41:53.131379781Z"
     description: Anarchy Operator
     digest: 03bf8fbcda3a7132c933cc71569b5d7b5bd1a83bd9f48cd00b198e2c7d794f5c
     name: anarchy
@@ -501,4 +511,4 @@ entries:
     urls:
     - https://redhat-cop.github.io/anarchy/anarchy-0.15.0.tgz
     version: 0.15.0
-generated: "2026-04-10T20:17:34.026752124Z"
+generated: "2026-04-10T22:41:53.129887138Z"
