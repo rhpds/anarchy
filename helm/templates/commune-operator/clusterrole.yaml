@@ -111,6 +111,19 @@ rules:
   - update
   - watch
 - apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - servicemonitors
+  verbs:
+  - create
+  - delete
+  - deletecollection
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - route.openshift.io
   resources:
   - routes
@@ -120,4 +133,17 @@ rules:
   - list
   - patch
   - update
+- apiGroups:
+  - secretgenerator.mittwald.de
+  resources:
+  - stringsecrets
+  verbs:
+  - create
+  - delete
+  - deletecollection
+  - get
+  - list
+  - patch
+  - update
+  - watch
 {{- end }}
