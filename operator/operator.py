@@ -5,6 +5,8 @@ import logging
 
 import kopf
 import kubernetes_asyncio
+from kubernetes_asyncio.client import ApiException as K8sApiException
+
 from anarchy import Anarchy
 from anarchyaction import AnarchyAction
 from anarchygovernor import AnarchyGovernor
@@ -238,7 +240,11 @@ async def action_daemon(stopped, **kwargs):
     try:
         while not stopped:
             async with anarchy_subject.lock:
-                await anarchy_subject.refresh()
+                try:
+                    await anarchy_subject.refresh()
+                except K8sApiException as err:
+                    if err.status == 404:
+                        return
                 if anarchy_subject.ignore:
                     raise kopf.TemporaryError(
                         f"Refusing to handle {anarchy_action} when {anarchy_subject} is marked with ignore",
@@ -411,14 +417,18 @@ async def run_daemon(stopped, **kwargs):
             try:
                 await anarchy_run.refresh()
                 await anarchy_subject.refresh()
-            except kubernetes_asyncio.client.rest.ApiException as err:
+            except K8sApiException as err:
                 if err.status == 404:
                     return
                 raise
             if anarchy_run.ignore or anarchy_subject.ignore:
                 return
             if anarchy_action:
-                await anarchy_action.refresh()
+                try:
+                    await anarchy_action.refresh()
+                except K8sApiException as err:
+                    if err.status == 404:
+                        return
                 if anarchy_action.ignore:
                     raise kopf.TemporaryError(
                         f"Refusing to handle {anarchy_run} when {anarchy_action} is marked with ignore",
