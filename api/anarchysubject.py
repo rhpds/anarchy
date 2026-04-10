@@ -121,7 +121,7 @@ class AnarchySubject(VarSecretMixin, AnarchyObject):
                 if e.status == 404:
                     raise ResponseError.NOT_FOUND(f"{self} not found")
                 elif e.status == 409:
-                    await self.refresh()
+                    await self.refetch()
                 else:
                     raise
 
