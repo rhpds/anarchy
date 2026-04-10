@@ -1,0 +1,27 @@
+{{- if (and .Values.deploy .Values.metrics.enabled) -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "anarchy.name" . }}-api-metrics
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "anarchy.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "anarchy.selectorLabels" . | nindent 6 }}
+  namespaceSelector:
+    matchNames:
+    - {{ .Values.namespace.name }}
+  endpoints:
+  - port: metrics
+    interval: "30s"
+    path: /metrics
+    basicAuth:
+      username:
+        name: {{ include "anarchy.name" . }}-metrics-credentials
+        key: metrics_username
+      password:
+        name: {{ include "anarchy.name" . }}-metrics-credentials
+        key: metrics_password
+{{- end }}

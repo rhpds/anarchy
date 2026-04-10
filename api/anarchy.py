@@ -1,8 +1,10 @@
-import kubernetes_asyncio
-import logging
 import os
 
-class Anarchy():
+import kubernetes_asyncio
+from metrics import TimerDecoratorMeta
+
+
+class Anarchy(metaclass=TimerDecoratorMeta):
     domain = os.environ.get('ANARCHY_DOMAIN', 'anarchy.gpte.redhat.com')
     running_all_in_one = 'true' == os.environ.get('ANARCHY_RUNNING_ALL_IN_ONE', '')
     version = os.environ.get('ANARCHY_VERSION', 'v1')
@@ -18,6 +20,10 @@ class Anarchy():
     runner_terminating_label = f"{domain}/runner-terminating"
     spec_sha256_annotation = f"{domain}/spec-sha256"
     subject_label = f"{domain}/subject"
+
+    cluster_domain = os.environ.get('CLUSTER_DOMAIN')
+    metrics_enabled = os.environ.get('METRICS_ENABLED', 'true').lower() == 'true'
+    metrics_port = int(os.environ.get('METRICS_PORT', 9092))
 
     @classmethod
     async def on_shutdown(cls):

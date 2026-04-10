@@ -37,12 +37,25 @@ spec:
         - name: CALLBACK_BASE_URL
           value: https://{{ (index $.Values.ingress.hosts 0).host }}
         {{- end }}
+        {{- if $.Values.metrics.enabled }}
+        - name: METRICS_ENABLED
+          value: "true"
+        {{- end }}
+        {{- range $k, $v := $namespace.envVars | default $.Values.envVars }}
+        - name: {{ $k | quote }}
+          value: {{ $v | quote }}
+        {{ end }}
         {{- if $.Values.image.repository | contains ":" }}
         image: {{ $.Values.image.repository }}
         {{- else }}
         image: {{ $.Values.image.repository }}:v{{ $.Chart.AppVersion }}
         {{- end }}
         imagePullPolicy: {{ $.Values.image.pullPolicy }}
+        {{- if $.Values.metrics.enabled }}
+        ports:
+        - name: metrics
+          containerPort: 9092
+        {{- end }}
         resources:
           {{- toYaml $.Values.resources | nindent 10 }}
       {{- with $namespace.nodeSelector | default $.Values.nodeSelector }}
