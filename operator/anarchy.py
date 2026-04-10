@@ -7,7 +7,7 @@ from metrics import TimerDecoratorMeta
 
 class Anarchy(metaclass=TimerDecoratorMeta):
     action_check_interval = int(os.environ.get('ACTION_CHECK_INTERVAL', 3))
-    cleanup_interval = int(os.environ.get('CLEANUP_INTERVAL', 60))
+    cleanup_interval = int(os.environ.get('CLEANUP_INTERVAL', 600))
     domain = os.environ.get('ANARCHY_DOMAIN', 'anarchy.gpte.redhat.com')
     metrics_enabled = os.environ.get('METRICS_ENABLED', 'true').lower() == 'true'
     metrics_port = int(os.environ.get('METRICS_PORT', 9091))

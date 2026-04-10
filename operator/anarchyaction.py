@@ -269,15 +269,15 @@ class AnarchyAction(AnarchyCachedKopfObject):
             logging.info("Set references for {self}")
             await self.json_patch(patch)
 
-    async def manage(self, anarchy_subject):
-        """
-        Called by daemon loop to periodically manage this action.
-        """
+    async def manage(self, anarchy_subject) -> int|None:
+        """Manage AnarchyAction and return interval to manage again or
+        None to indicate management is complete."""
         if self.is_finished:
-            return await self.manage_finished(anarchy_subject)
-        return await self.manage_active(anarchy_subject)
+            return await self.__manage_finished(anarchy_subject)
+        return await self.__manage_active(anarchy_subject)
 
-    async def manage_active(self, anarchy_subject):
+    async def __manage_active(self, anarchy_subject) -> int:
+        """Manage active AnarchyAction and return interval to manage again."""
         await anarchy_subject.add_action_to_status(self)
 
         if self.state in ('run pending', 'running'):
@@ -298,11 +298,13 @@ class AnarchyAction(AnarchyCachedKopfObject):
 
         return Anarchy.action_check_interval
 
-    async def manage_finished(self, anarchy_subject):
+    async def __manage_finished(self, anarchy_subject) -> int|None:
+        """Manage finished AnarchyAction by checking if cleanup has elapsed and if so removing it."""
         await anarchy_subject.remove_action_from_status(self)
         if self.cleanup_after_datetime <= datetime.now(timezone.utc):
             await self.delete()
-        return Anarchy.action_check_interval
+            return None
+        return Anarchy.cleanup_interval
 
     async def reschedule(self, after=None, vars={}):
         patch = [{
