@@ -63,7 +63,7 @@ class AnarchyWatchObject(AnarchyObject):
         obj = cls.cache.get(name)
         if obj:
             return obj
-        await cls.fetch(name)
+        return await cls.fetch(name)
 
     @classmethod
     async def on_shutdown(cls):
