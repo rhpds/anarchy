@@ -15,6 +15,12 @@ spec:
     port: {{ $v }}
     targetPort: {{ $v }}
   {{- end }}
+  {{- if $.Values.metrics.enabled }}
+  - name: metrics
+    protocol: TCP
+    port: 9092
+    targetPort: 9092
+  {{- end }}
   selector:
     {{- include "anarchy.apiComponentLabels" $ | nindent 4 }}
 {{- end }}

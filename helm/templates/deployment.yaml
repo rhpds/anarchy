@@ -29,6 +29,8 @@ spec:
       containers:
       - name: manager
         env:
+        - name: ANARCHY_COMPONENT
+          value: operator
         - name: ANARCHY_SERVICE
           value: {{ include "anarchy.name" $ }}
         {{- if $.Values.metrics.enabled }}

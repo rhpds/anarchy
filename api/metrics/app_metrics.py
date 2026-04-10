@@ -18,3 +18,15 @@ class AppMetrics:
         },
         registry=registry,
     )
+
+    http_request_duration = Histogram(
+        "anarchy_api_http_request_duration_seconds",
+        "HTTP request duration for Anarchy API endpoints",
+        {
+            "method": "The HTTP method (GET, POST, PATCH)",
+            "route": "The handler function name (e.g. get_run, post_action)",
+            "status": "The HTTP status code",
+            "cluster_domain": "The cluster name",
+        },
+        registry=registry,
+    )

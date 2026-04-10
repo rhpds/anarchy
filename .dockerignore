@@ -1,0 +1,6 @@
+.venv/
+.git/
+.idea/
+.DS_Store
+docs/Doxygen/
+docs/anarchy-doxygen.tar.gz

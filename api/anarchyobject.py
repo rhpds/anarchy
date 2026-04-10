@@ -1,10 +1,10 @@
-import logging
 
-from copy import deepcopy
 
 from anarchy import Anarchy
+from metrics import TimerDecoratorMeta
 
-class AnarchyObject:
+
+class AnarchyObject(metaclass=TimerDecoratorMeta):
     api_version = Anarchy.api_version
 
     @classmethod

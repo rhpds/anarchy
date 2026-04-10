@@ -1,10 +1,7 @@
-import kubernetes_asyncio
 import logging
-import re
+import time
 
-from asgi_tools import App, ResponseError
-from datetime import datetime, timezone
-
+import kubernetes_asyncio
 from anarchy import Anarchy
 from anarchyaction import AnarchyAction
 from anarchygovernor import AnarchyGovernor
@@ -12,8 +9,31 @@ from anarchyrun import AnarchyRun
 from anarchyrunner import AnarchyRunner
 from anarchyrunnerpod import AnarchyRunnerPod
 from anarchysubject import AnarchySubject
+from asgi_tools import App, ResponseError
+from metrics import AppMetrics, MetricsService
 
 app = App()
+
+@app.middleware
+async def http_metrics_middleware(handler, request, receive, send):
+    start_time = time.time()
+    status = '200'
+    try:
+        response = await handler(request, receive, send)
+        return response
+    except Exception as e:
+        status = str(getattr(e, 'status_code', 500))
+        raise
+    finally:
+        duration = time.time() - start_time
+        endpoint = request.scope.get('endpoint')
+        route_name = getattr(endpoint, '__name__', 'unknown')
+        AppMetrics.http_request_duration.observe({
+            'method': request.method,
+            'route': route_name,
+            'status': status,
+            'cluster_domain': Anarchy.cluster_domain,
+        }, duration)
 
 @app.on_startup
 async def on_startup():
@@ -27,8 +47,14 @@ async def on_startup():
     for anarchy_runner in AnarchyRunner.cache.values():
         await anarchy_runner.update_status()
 
+    if Anarchy.metrics_enabled:
+        await MetricsService.start(port=Anarchy.metrics_port)
+
 @app.on_shutdown
 async def on_shutdown():
+    if Anarchy.metrics_enabled:
+        await MetricsService.stop()
+
     await AnarchyRun.on_shutdown()
     await AnarchyRunnerPod.on_shutdown()
     await AnarchyRunner.on_shutdown()
