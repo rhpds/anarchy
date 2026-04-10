@@ -205,21 +205,19 @@ class AnarchyRun(AnarchyCachedKopfObject):
                 "value": "",
             }])
 
-    async def finish(self, state):
-        await self.json_patch_status([{
-            "op": "add",
-            "path": "/status/runPostTimestamp",
-            "value": datetime.now(timezone.utc).strftime('%FT%TZ'),
-        }])
-        await self.json_patch([{
-            "op": "add",
-            "path": f"/metadata/labels/{Anarchy.finished_label.replace('/', '~1')}",
-            "value": state,
-        }, {
-            "op": "add",
-            "path": f"/metadata/labels/{Anarchy.runner_label.replace('/', '~1')}",
-            "value": state,
-        }])
+    async def finish(self, state) -> None:
+        """Mark AnarchyRun as finished state and set runPostTimestamp in status."""
+        await self.merge_patch_status({
+            "runPostTimestamp": datetime.now(timezone.utc).strftime('%FT%TZ')
+        })
+        await self.merge_patch({
+            "metadata": {
+                "labels": {
+                    Anarchy.finished_label: state,
+                    Anarchy.runner_label: state,
+                }
+            }
+        })
 
     async def get_action(self):
         if not self.has_action:
