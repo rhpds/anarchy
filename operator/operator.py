@@ -251,8 +251,9 @@ async def action_daemon(stopped, **kwargs):
                         delay=30
                     )
                 sleep_interval = await anarchy_action.manage(anarchy_subject)
-            if sleep_interval:
-                await asyncio.sleep(sleep_interval)
+            if sleep_interval is None:
+                return
+            await asyncio.sleep(sleep_interval)
     except asyncio.CancelledError:
         pass
 
@@ -436,6 +437,8 @@ async def run_daemon(stopped, **kwargs):
                     )
             async with anarchy_subject.lock:
                 sleep_interval = await anarchy_run.manage(anarchy_subject, anarchy_action)
+                if sleep_interval is None:
+                    return
             if sleep_interval:
                 await asyncio.sleep(sleep_interval)
     except asyncio.CancelledError:

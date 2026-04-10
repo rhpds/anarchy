@@ -341,13 +341,16 @@ class AnarchyRun(AnarchyCachedKopfObject):
                 logging.warning(f"{self} is active run for {anarchy_subject} but was still marked as queued")
                 await self.set_to_pending()
 
-    async def manage(self, anarchy_subject, anarchy_action):
+    async def manage(self, anarchy_subject, anarchy_action) -> int|None:
+        """Manage AnarchyRun and return interval to manage again or
+        None to indicate management is complete."""
         if self.is_finished:
-            return await self.manage_finished(anarchy_subject, anarchy_action)
+            return await self.__manage_finished()
         else:
-            return await self.manage_active(anarchy_subject, anarchy_action)
+            return await self.__manage_active(anarchy_subject, anarchy_action)
 
-    async def manage_active(self, anarchy_subject, anarchy_action):
+    async def __manage_active(self, anarchy_subject, anarchy_action) -> int:
+        """Manage active AnarchyRun and return interval to manage again."""
         if self.is_pending_or_running:
             # Anything pending or running is managed by the API component
             pass
@@ -376,10 +379,12 @@ class AnarchyRun(AnarchyCachedKopfObject):
 
         return Anarchy.run_check_interval
 
-    async def manage_finished(self, anarchy_subject, anarchy_action):
+    async def __manage_finished(self) -> int|None:
+        """Manage finished AnarchyRun by checking if cleanup has elapsed and if so removing it."""
         if self.cleanup_after_datetime <= datetime.now(timezone.utc):
             await self.delete()
-        return Anarchy.run_check_interval
+            return None
+        return 10 * Anarchy.cleanup_interval
 
     async def retry(self):
         logging.info(f"{self} retrying")
