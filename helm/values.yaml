@@ -74,6 +74,10 @@ tolerations: []
 
 affinity: {}
 
+metrics:
+  enabled: true
+  username: metrics
+
 runners:
   default:
     consecutiveFailureLimit: 10

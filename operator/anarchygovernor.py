@@ -1,12 +1,13 @@
-import kopf
 import logging
-import pytimeparse
-
 from datetime import timedelta
 
+import kopf
+import pytimeparse
 from anarchy import Anarchy
+from metrics import TimerDecoratorMeta
 
-class AnarchyGovernor:
+
+class AnarchyGovernor(metaclass=TimerDecoratorMeta):
     cache = {}
     kind = 'AnarchyGovernor'
     plural = 'anarchygovernors'
