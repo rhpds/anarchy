@@ -24,11 +24,12 @@ class Anarchy(metaclass=TimerDecoratorMeta):
     cluster_domain = os.environ.get('CLUSTER_DOMAIN')
     metrics_enabled = os.environ.get('METRICS_ENABLED', 'true').lower() == 'true'
     metrics_port = int(os.environ.get('METRICS_PORT', 9092))
+    poll_timeout = int(os.environ.get('POLL_TIMEOUT', 30))
 
     @classmethod
     async def on_shutdown(cls):
-        cls.core_v1_api.api_client.close()
-        cls.custom_objects_api.api_client.close()
+        await cls.core_v1_api.api_client.close()
+        await cls.custom_objects_api.api_client.close()
 
     @classmethod
     async def on_startup(cls):
