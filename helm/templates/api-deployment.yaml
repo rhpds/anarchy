@@ -41,6 +41,8 @@ spec:
         - name: METRICS_ENABLED
           value: "true"
         {{- end }}
+        - name: POLL_TIMEOUT
+          value: {{ $.Values.pollTimeout | default "30" | quote }}
         {{- range $k, $v := $namespace.envVars | default $.Values.envVars }}
         - name: {{ $k | quote }}
           value: {{ $v | quote }}

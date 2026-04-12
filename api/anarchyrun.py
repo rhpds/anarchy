@@ -1,17 +1,17 @@
-import kubernetes_asyncio
+import asyncio
 import logging
-
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-
-from anarchy import Anarchy
-from anarchywatchobject import AnarchyWatchObject
 
 import anarchyaction
 import anarchygovernor
 import anarchyrunner
-import anarchysubject
 import anarchyrunnerpod
+import anarchysubject
+import kubernetes_asyncio
+from anarchy import Anarchy
+from anarchywatchobject import AnarchyWatchObject
+
 
 class AnarchyRun(AnarchyWatchObject):
     cache = {}
@@ -19,8 +19,28 @@ class AnarchyRun(AnarchyWatchObject):
     plural = 'anarchyruns'
     preload = True
     pending_run_names = []
+    run_available_event = asyncio.Event()
     runner_assignments = {}
     runner_states = {'queued', 'pending', 'failed', 'lost', 'canceled', 'successful'}
+
+    @classmethod
+    def notify_run_available(cls):
+        cls.run_available_event.set()
+
+    @classmethod
+    async def wait_for_available_run(cls, timeout):
+        """
+        Wait up to timeout seconds for a run to become available.
+        Returns True if a run may be available, False on timeout.
+        """
+        cls.run_available_event.clear()
+        if cls.pending_run_names:
+            return True
+        try:
+            await asyncio.wait_for(cls.run_available_event.wait(), timeout=timeout)
+            return True
+        except asyncio.TimeoutError:
+            return False
 
     @classmethod
     def cache_remove(cls, name):
@@ -111,7 +131,7 @@ class AnarchyRun(AnarchyWatchObject):
             logging.warning(f"{anarchy_run} was lost by {anarchy_runner_pod}")
             try:
                 await anarchy_run.set_runner_state_lost(anarchy_runner_pod)
-            except Exception as e:
+            except Exception:
                 logging.exception(f"Error resetting {anarchy_run} to lost")
 
     @classmethod
@@ -196,6 +216,7 @@ class AnarchyRun(AnarchyWatchObject):
         if self.runner_state == 'pending':
             if self.name not in self.pending_run_names:
                 self.pending_run_names.append(self.name)
+                self.notify_run_available()
         elif self.name in self.pending_run_names:
             self.pending_run_names.remove(self.name)
 
@@ -340,5 +361,5 @@ class AnarchyRun(AnarchyWatchObject):
             logging.warning(f"{self} reset to pending due to missing AnarchyRunnerPod {runner_pod_name}")
             try:
                 await self.set_runner_state_pending()
-            except Exception as e:
+            except Exception:
                 logging.exception(f"Error resetting {self} to pending after missing AnarcyhRunnerPod")
