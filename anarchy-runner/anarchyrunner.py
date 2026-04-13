@@ -44,6 +44,7 @@ class AnarchyRunner:
     domain = os.environ.get('ANARCHY_DOMAIN', 'anarchy.gpte.redhat.com')
     output_dir = os.environ.get('OUTPUT_DIR', '/opt/app-root/anarchy-runner/output')
     polling_interval = int(os.environ.get('POLLING_INTERVAL', 5))
+    request_timeout = int(os.environ.get('REQUEST_TIMEOUT', 35))
     runner_dir = os.environ.get('RUNNER_DIR', '/opt/app-root/anarchy-runner/ansible-runner')
 
     ansible_collections_dir = f"{ansible_private_dir}/collections"
@@ -64,13 +65,16 @@ class AnarchyRunner:
         try:
             response = requests.get(
                 f"{self.anarchy_url}/run",
-                headers = dict(Authorization=self.auth_header)
+                headers=dict(Authorization=self.auth_header),
+                timeout=self.request_timeout,
             )
             if response.status_code != 200:
                 raise AnarchyGetRunException(f"{response.status_code} {response.text}")
             return response.json()
         except requests.exceptions.ConnectionError as e:
             raise AnarchyGetRunException(f"{e}")
+        except requests.exceptions.Timeout:
+            return None
 
     def post_result(self, anarchy_run, result, retries=10):
         for i in range(retries):
@@ -227,11 +231,9 @@ class AnarchyRunner:
                 run_data = self.get_run()
                 if run_data:
                     self.run(run_data)
-                else:
-                    time.sleep(self.polling_interval)
             except AnarchyGetRunException as e:
                 logging.error(f"Failed to get run: {e}")
-                time.sleep(30)
+                time.sleep(self.polling_interval)
 
     def setup_inventory(self,
         anarchy_action,

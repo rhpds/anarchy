@@ -1,16 +1,16 @@
 import asyncio
-import kubernetes_asyncio
 import logging
 import os
-import pytimeparse
-
 from copy import deepcopy
 from datetime import datetime, timezone
 
+import kubernetes_asyncio
+import pytimeparse
 from anarchy import Anarchy
 from anarchycachedkopfobject import AnarchyCachedKopfObject
 from deep_merge import deep_merge
 from random_string import random_string
+
 
 class AnarchyRunner(AnarchyCachedKopfObject):
     cache = {}
@@ -122,7 +122,7 @@ class AnarchyRunner(AnarchyCachedKopfObject):
         if 'serviceAccountName' not in ret['spec']:
             ret['spec']['serviceAccountName'] = self.service_account_name
 
-        if not 'containers' in ret['spec']:
+        if 'containers' not in ret['spec']:
             ret['spec']['containers'] = [{}]
 
         container = ret['spec']['containers'][0]
@@ -132,7 +132,7 @@ class AnarchyRunner(AnarchyCachedKopfObject):
         if not container.get('image'):
             container['image'] = self.runner_image
 
-        if not 'env' in container:
+        if 'env' not in container:
             container['env'] = []
 
         container['env'].extend([
@@ -153,6 +153,9 @@ class AnarchyRunner(AnarchyCachedKopfObject):
                         'fieldPath': 'metadata.name'
                     }
                 }
+            },{
+                'name': 'REQUEST_TIMEOUT',
+                'value': str(Anarchy.poll_timeout + 5),
             },{
                 'name': 'RUNNER_NAME',
                 'value': self.name
@@ -324,6 +327,6 @@ class AnarchyRunner(AnarchyCachedKopfObject):
         )
         for pod in pod_list.items:
             if not pod.metadata.deletion_timestamp \
-            and not Anarchy.runner_terminating_label in pod.metadata.labels:
+            and Anarchy.runner_terminating_label not in pod.metadata.labels:
                 self.pods[pod.metadata.name] = pod
         self.pods_preloaded = True

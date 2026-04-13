@@ -121,7 +121,8 @@ async def get_run(request):
         await anarchy_runner_pod.delete()
         return None
 
-    anarchy_run = await AnarchyRun.get_run_for_runner_pod(anarchy_runner, anarchy_runner_pod)
+    anarchy_run = await AnarchyRun.get_run_for_runner_pod(anarchy_runner, anarchy_runner_pod, Anarchy.poll_timeout)
+
     if not anarchy_run:
         return None
 

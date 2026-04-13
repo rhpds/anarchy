@@ -66,6 +66,9 @@ ingress:
     hosts:
     - anarchy.apps.example.com
 
+# Long polling timeout in seconds for GET /run endpoint
+pollTimeout: 30
+
 resources: {}
 
 nodeSelector: {}
