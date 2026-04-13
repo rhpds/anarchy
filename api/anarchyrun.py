@@ -139,11 +139,11 @@ class AnarchyRun(AnarchyWatchObject):
             anarchy_run = cls.cache.get(lost_run_name)
             if not anarchy_run:
                 continue
-            logging.warning(f"{anarchy_run} was lost by {anarchy_runner_pod}")
+            logging.warning("%s was lost by %s", anarchy_run, anarchy_runner_pod)
             try:
                 await anarchy_run.set_runner_state_lost(anarchy_runner_pod)
             except Exception:
-                logging.exception(f"Error resetting {anarchy_run} to lost")
+                logging.exception("Error resetting %s to lost", anarchy_run)
 
     @classmethod
     async def on_startup(cls):
@@ -305,26 +305,15 @@ class AnarchyRun(AnarchyWatchObject):
         }])
 
     async def set_runner_state_lost(self, anarchy_runner_pod):
-        await self.json_patch_status([{
-            "op": "add",
-            "path": "/status/failures",
-            "value": self.failure_count + 1,
-        }, {
-            "op": "add",
-            "path": "/status/result",
-            "value": {
+        await self.merge_patch_status({
+            "failures": self.failure_count + 1,
+            "result": {
                 "status": "lost",
                 "statusMessage": f"{anarchy_runner_pod} requested a new AnarcyhRun without posting a result!",
-            }
-        }, {
-            "op": "add",
-            "path": "/status/retryAfter",
-            "value": (datetime.now(timezone.utc) + self.retry_after_timedelta).strftime('%FT%TZ'),
-        }, {
-            "op": "add",
-            "path": "/status/runPostTimestamp",
-            "value": datetime.now(timezone.utc).strftime('%FT%TZ'),
-        }])
+            },
+            "retryAfter": (datetime.now(timezone.utc) + self.retry_after_timedelta).strftime('%FT%TZ'),
+            "runPostTimestamp": datetime.now(timezone.utc).strftime('%FT%TZ'),
+        })
         await self.json_patch([{
             "op": "add",
             "path": f"/metadata/labels/{Anarchy.runner_label.replace('/', '~1')}",
