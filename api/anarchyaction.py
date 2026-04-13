@@ -126,6 +126,10 @@ class AnarchyAction(VarSecretMixin, AnarchyObject):
             return f"{self.callback_base_url}/action/{self.name}"
 
     @property
+    def is_delete_handler(self):
+        return Anarchy.delete_handler_label in self.labels
+
+    @property
     def is_finished(self):
         return Anarchy.finished_label in self.labels
 

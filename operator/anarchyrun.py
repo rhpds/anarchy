@@ -253,7 +253,7 @@ class AnarchyRun(AnarchyCachedKopfObject):
         await anarchy_subject.set_run_status(self.result_status, self.result_status_message)
         if anarchy_action:
             if anarchy_action.is_labeled_for_cancelation:
-                logging.info(f"Canceling {self} after failed run for canceled {anarchy_action}")
+                logging.info("Canceling %s after failed run for canceled %s", self, anarchy_action)
                 await self.finish('canceled')
                 await anarchy_action.finish('canceled')
             else:
@@ -263,7 +263,7 @@ class AnarchyRun(AnarchyCachedKopfObject):
         await anarchy_subject.set_run_status('lost')
         if anarchy_action:
             if anarchy_action.is_labeled_for_cancelation:
-                logging.info(f"Canceling {self} after lost run for canceled {anarchy_action}")
+                logging.info("Canceling %s after lost run for canceled %s", self, anarchy_action)
                 await self.finish('canceled')
                 await anarchy_action.finish('canceled')
             else:
@@ -353,11 +353,11 @@ class AnarchyRun(AnarchyCachedKopfObject):
             # Anything pending or running is managed by the API component
             pass
         elif anarchy_action and anarchy_action.is_labeled_for_cancelation:
-            logging.info("Canceling {self} for canceled {anarchy_action}")
+            logging.info("Canceling %s for canceled %s", self, anarchy_action)
             await self.finish('canceled')
             await anarchy_action.finish('canceled')
         elif anarchy_action and anarchy_action.is_finished:
-            logging.info("Canceling {self} for finished {anarchy_action}")
+            logging.info("Canceling %s for canceled %s", self, anarchy_action)
             await self.finish('canceled')
         elif self.is_labeled_for_cancelation:
             await self.finish('canceled')

@@ -40,37 +40,42 @@ class AnarchyRun(AnarchyWatchObject):
         anarchy_subject = await anarchy_action.get_subject()
         anarchy_governor = await anarchy_subject.get_governor()
 
+        definition = {
+            "apiVersion": Anarchy.api_version,
+            "kind": "AnarchyRun",
+            "metadata": {
+                "generateName": f"{anarchy_action.name}-{handler['name']}-",
+                "labels": {
+                    Anarchy.event_label: handler['name'],
+                    Anarchy.action_label: anarchy_action.name,
+                    Anarchy.governor_label: anarchy_governor.name,
+                    Anarchy.runner_label: 'queued',
+                    Anarchy.subject_label: anarchy_subject.name,
+                },
+                "namespace": Anarchy.namespace,
+                "ownerReferences": [anarchy_action.as_owner_ref()],
+            },
+            "spec": {
+                "action": anarchy_action.as_reference(),
+                "governor": anarchy_governor.as_reference(),
+                "handler": handler,
+                "subject": {
+                    "vars": anarchy_subject.vars,
+                    **anarchy_subject.as_reference(),
+                }
+            }
+        }
+        if anarchy_action.is_delete_handler:
+            definition['metadata']['labels'][Anarchy.delete_handler_label] = ""
+
         definition = await Anarchy.custom_objects_api.create_namespaced_custom_object(
             group = Anarchy.domain,
             namespace = Anarchy.namespace,
             plural = 'anarchyruns',
             version = Anarchy.version,
-            body = {
-                "apiVersion": Anarchy.api_version,
-                "kind": "AnarchyRun",
-                "metadata": {
-                    "generateName": f"{anarchy_action.name}-{handler['name']}-",
-                    "labels": {
-                        Anarchy.event_label: handler['name'],
-                        Anarchy.action_label: anarchy_action.name,
-                        Anarchy.governor_label: anarchy_governor.name,
-                        Anarchy.runner_label: 'queued',
-                        Anarchy.subject_label: anarchy_subject.name,
-                    },
-                    "namespace": Anarchy.namespace,
-                    "ownerReferences": [anarchy_action.as_owner_ref()],
-                },
-                "spec": {
-                    "action": anarchy_action.as_reference(),
-                    "governor": anarchy_governor.as_reference(),
-                    "handler": handler,
-                    "subject": {
-                        "vars": anarchy_subject.vars,
-                        **anarchy_subject.as_reference(),
-                    }
-                }
-            }
+            body = definition,
         )
+
         anarchy_run = cls(definition)
         await anarchy_run.cache_put()
         return anarchy_run
