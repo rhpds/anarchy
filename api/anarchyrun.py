@@ -102,10 +102,16 @@ class AnarchyRun(AnarchyWatchObject):
                 return cls.cache[run_name]
 
     @classmethod
-    async def get_run_for_runner_pod(cls, anarchy_runner, anarchy_runner_pod):
+    async def get_run_for_runner_pod(cls, anarchy_runner, anarchy_runner_pod, poll_timeout=None):
         while True:
             if not cls.pending_run_names:
-                return None
+                if poll_timeout is None:
+                    return None
+                has_run = await cls.wait_for_available_run(poll_timeout)
+                poll_timeout = None
+                if not has_run:
+                    return None
+                continue
             anarchy_run = cls.cache[cls.pending_run_names.pop(0)]
             while anarchy_run.runner_state == 'pending':
                 try:
