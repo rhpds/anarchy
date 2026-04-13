@@ -287,7 +287,7 @@ class AnarchySubject(AnarchyCachedKopfObject):
                 anarchy_action = await self.get_active_action()
                 if anarchy_action.creation_timestamp >= self.deletion_timestamp:
                     if not anarchy_action.is_delete_handler:
-                        logging.info(f"Applying deleting label to {anarchy_action}")
+                        logging.info("Applying deleting label to %s", anarchy_action)
                         await anarchy_action.json_patch([{
                             "op": "add",
                             "path": f"/metadata/labels/{Anarchy.delete_handler_label.replace('/', '~1')}",
@@ -731,7 +731,7 @@ class AnarchySubject(AnarchyCachedKopfObject):
                 if self.is_deleting \
                 and not anarchy_run.is_delete_handler:
                     await anarchy_run.finish('canceled')
-                    logging.info("{anarchy_run} canceled because it is not related to pending delete")
+                    logging.info("%s canceled because it is not related to pending delete", anarchy_run)
                     await self.remove_run_from_status(anarchy_run)
                 else:
                     if anarchy_run.has_action:
