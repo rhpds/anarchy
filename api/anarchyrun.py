@@ -116,6 +116,8 @@ class AnarchyRun(AnarchyWatchObject):
                 poll_timeout = None
                 if not has_run:
                     return None
+                if anarchy_runner_pod.is_deleting or anarchy_runner_pod.is_marked_for_termination:
+                    return None
                 continue
             anarchy_run = cls.cache[cls.pending_run_names.pop(0)]
             while anarchy_run.runner_state == 'pending':
