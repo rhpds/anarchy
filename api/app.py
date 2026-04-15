@@ -114,10 +114,10 @@ async def get_run(request):
     await AnarchyRun.handle_any_lost_runs(anarchy_runner_pod)
 
     if anarchy_runner_pod.is_deleting:
-        logging.info(f"Not giving AnarchyRun to {anarchy_runner_pod} because it is being deleted")
+        logging.info("Not giving AnarchyRun to %s because it is being deleted", anarchy_runner_pod)
         return None
     elif anarchy_runner_pod.is_marked_for_termination:
-        logging.info(f"Deleting {anarchy_runner_pod} that is marked for termination")
+        logging.info("Deleting %s that is marked for termination", anarchy_runner_pod)
         await anarchy_runner_pod.delete()
         return None
 
@@ -133,6 +133,7 @@ async def get_run(request):
     anarchy_subject = await anarchy_run.get_subject()
 
     if handler['type'] == 'subjectEvent':
+        logging.info("Running %s on %s", anarchy_run, anarchy_runner_pod)
         return {
             'handler': handler,
             'governor': await anarchy_governor.export(),
@@ -146,6 +147,7 @@ async def get_run(request):
         "path": "/status/state",
         "value": "running",
     }])
+    logging.info("Running %s for %s on %s", anarchy_run, anarchy_action, anarchy_runner_pod)
 
     return {
         'handler': handler,
