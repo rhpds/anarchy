@@ -188,6 +188,8 @@ async def post_run(request):
         logging.info(f"{anarchy_runner_pod} sent unknown result status {result_status} for {anarchy_run}")
         raise ResponseError.BAD_REQUEST(f"Unknown result status {result_status}")
 
+    AnarchyRun.runner_assignments.pop(anarchy_run.name, None)
+
     await anarchy_runner.update_status()
 
     return {"success": True}
