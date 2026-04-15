@@ -244,15 +244,10 @@ class AnarchyRun(AnarchyWatchObject):
             plural = self.plural,
             version = Anarchy.version,
         )
-        await self.json_patch_status([{
-            "op": "add",
-            "path": "/status/runner",
-            "value": anarchy_runner.as_reference(),
-        }, {
-            "op": "add",
-            "path": "/status/runnerPod",
-            "value": anarchy_runner_pod.as_reference(),
-        }])
+        await self.merge_patch_status({
+            "runner": anarchy_runner.as_reference(),
+            "runnerPod": anarchy_runner_pod.as_reference(),
+        })
         logging.info(f"Assigned {self} to {anarchy_runner_pod}")
 
     async def cache_put(self):
