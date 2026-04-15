@@ -115,11 +115,11 @@ async def get_run(request):
 
     if anarchy_runner_pod.is_deleting:
         logging.info("Not giving AnarchyRun to %s because it is being deleted", anarchy_runner_pod)
-        return None
+        raise ResponseError.FORBIDDEN("Runner pod is deleting")
     elif anarchy_runner_pod.is_marked_for_termination:
         logging.info("Deleting %s that is marked for termination", anarchy_runner_pod)
         await anarchy_runner_pod.delete()
-        return None
+        raise ResponseError.FORBIDDEN("Runner pod marked for termination")
 
     anarchy_run = await AnarchyRun.get_run_for_runner_pod(anarchy_runner, anarchy_runner_pod, Anarchy.poll_timeout)
 
