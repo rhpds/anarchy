@@ -20,11 +20,15 @@
             tasks:
             - debug:
                 msg: "Goodbye, World!"
+            - pause:
+                seconds: 1
         subjectEventHandlers:
           create:
             tasks:
             - debug:
                 msg: "Hello, World!"
+            - pause:
+                seconds: 1
           delete:
             tasks:
             - anarchy_schedule_action:
