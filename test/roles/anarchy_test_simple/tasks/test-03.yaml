@@ -19,6 +19,8 @@
         actions:
           test:
             tasks:
+            - pause:
+                seconds: 1
             - when: not was_continued | default(false) | bool
               anarchy_continue_action:
                 after: 5s
@@ -54,20 +56,14 @@
     namespace: "{{ anarchy_namespace }}"
   register: get_action
   failed_when: >-
-    get_action.resources | default([]) | length != 1
+    get_action.resources | default([]) | length != 1 or
+    get_action.resources[0].spec.action != 'test' or
+    get_action.resources[0].spec.governorRef.name != "test-simple-03" or
+    get_action.resources[0].spec.subjectRef.name != "test-simple-03-a" or
+    get_action.resources[0].spec.vars | default({}) != {}
   until: get_action is successful
   retries: 10
   delay: 1
-
-- name: Verify AnarchyAction for test action for test-simple-03-a
-  vars:
-    _action: "{{ get_action.resources[0] }}"
-  assert:
-    that:
-    - _action.spec.action == "test"
-    - _action.spec.governorRef.name == "test-simple-03"
-    - _action.spec.subjectRef.name == "test-simple-03-a"
-    - _action.spec.vars | default({}) == {}
 
 - name: Wait for AnarchyRun for AnarchyAction for test-simple-03-a
   kubernetes.core.k8s_info:
