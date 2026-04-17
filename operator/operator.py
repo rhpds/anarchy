@@ -421,6 +421,11 @@ async def run_daemon(stopped, **kwargs):
             except K8sApiException as err:
                 if err.status == 404:
                     return
+                if err.status == 429:
+                    retry_after = int(err.headers.get('Retry-After', 5))
+                    logging.warning("API server returned 429, retrying after %ds", retry_after)
+                    await asyncio.sleep(retry_after)
+                    continue
                 raise
             if anarchy_run.ignore or anarchy_subject.ignore:
                 return
@@ -430,6 +435,11 @@ async def run_daemon(stopped, **kwargs):
                 except K8sApiException as err:
                     if err.status == 404:
                         return
+                    if err.status == 429:
+                        retry_after = int(err.headers.get('Retry-After', 5))
+                        logging.warning("API server returned 429, retrying after %ds", retry_after)
+                        await asyncio.sleep(retry_after)
+                        continue
                 if anarchy_action.ignore:
                     raise kopf.TemporaryError(
                         f"Refusing to handle {anarchy_run} when {anarchy_action} is marked with ignore",

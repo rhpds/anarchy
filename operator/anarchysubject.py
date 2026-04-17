@@ -199,8 +199,7 @@ class AnarchySubject(AnarchyCachedKopfObject):
                     raise
         else:
             raise kopf.TemporaryError(
-                "Failed to add %s to %s status after %s retries",
-                anarchy_run, self, max_retries,
+                f"Failed to add {anarchy_run} to {self} status after {max_retries} retries",
             )
         if add_as_active:
             logging.info("Added %s as active run for %s", anarchy_run, self)
@@ -622,7 +621,7 @@ class AnarchySubject(AnarchyCachedKopfObject):
                             })
                             patch.insert(0, {
                                 "op": "test",
-                                "path": "f/status/pendingActions/{i}/name",
+                                "path": f"/status/pendingActions/{i}/name",
                                 "value": anarchy_action.name
                             })
                 if patch:
@@ -635,8 +634,7 @@ class AnarchySubject(AnarchyCachedKopfObject):
                     logging.error(f"Failed to apply {patch} to {self}")
                     raise
         raise kopf.TemporaryError(
-            "Failed to remove %s from %s status after %s retries",
-            anarchy_action, self, max_retries,
+            f"Failed to remove {anarchy_action} from {self} status after {max_retries} retries",
         )
 
     async def remove_anarchy_finalizers(self):
