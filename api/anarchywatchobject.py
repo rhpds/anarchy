@@ -107,7 +107,7 @@ class AnarchyWatchObject(AnarchyObject):
                     if event_object['reason'] in ('Expired', 'Gone'):
                         raise WatchRestartError(event_object['reason'].lower())
                     else:
-                        raise WatchError(f"{event_obj['reason']} {event_obj['message']}")
+                        raise WatchError(f"{event_object['reason']} {event_object['message']}")
                 else:
                     raise WatchError(f"UKNOWN EVENT: {event}")
             elif event_type == 'DELETED':
@@ -125,6 +125,8 @@ class AnarchyWatchObject(AnarchyObject):
             except asyncio.CancelledError:
                 logging.info(f"Watch {cls.__name__} exiting")
                 return
+            except WatchRestartError:
+                logging.info(f"Watch {cls.__name__} restarting")
             except Exception as e:
                 if isinstance(e, kubernetes_asyncio.client.exceptions.ApiException) and e.status == 410:
                     logging.debug(f"Watch {cls.__name__} received 410 GONE")
@@ -134,7 +136,7 @@ class AnarchyWatchObject(AnarchyObject):
                 # If watch is repeatedly crashing then backoff retry
                 watch_duration = time.time() - watch_start_time
                 if watch_duration < 60:
-                    asyncio.sleep(60 - watch_duration)
+                    await asyncio.sleep(60 - watch_duration)
 
                 logging.info(f"Watch {cls.__name__} restarting")
 
