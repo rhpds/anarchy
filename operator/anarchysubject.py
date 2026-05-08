@@ -651,8 +651,8 @@ class AnarchySubject(AnarchyCachedKopfObject):
         # Suspicious if AnarchyRun is not in status, refresh object from API to be sure.
         if not self.has_run_in_status(anarchy_run):
             await self.refresh()
-        # Loop until consistent
-        while True:
+        max_retries = 10
+        for attempt in range(max_retries):
             patch = []
             removed_active_run = False
             # Loop over status runs entries building patch to remove run.
@@ -676,16 +676,20 @@ class AnarchySubject(AnarchyCachedKopfObject):
                 return
             try:
                 await self.json_patch_status(patch)
+                break
             except kubernetes_asyncio.client.rest.ApiException as e:
                 # 404 indicates run was being removed because subject was also being deleted.
                 if e.status == 404:
                     return
                 if e.status == 422:
-                    # Patch failed test condition, must be out of sync
+                    # Refresh AnarchySubject state and retry
                     await self.refresh()
                 else:
                     raise
-            break
+        else:
+            raise kopf.TemporaryError(
+                f"Failed to remove {anarchy_run} from {self} status after {max_retries} retries",
+            )
 
         if removed_active_run:
             logging.info("Removed active %s from %s status", anarchy_run, self)
