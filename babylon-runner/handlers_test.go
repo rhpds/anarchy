@@ -499,8 +499,8 @@ func TestHandleDestroyComplete(t *testing.T) {
 	if destroy["completeTimestamp"] == nil {
 		t.Error("expected completeTimestamp in actions.destroy")
 	}
-	if destroy["status"] != "successful" {
-		t.Errorf("destroy status = %v, want successful", destroy["status"])
+	if destroy["state"] != "successful" {
+		t.Errorf("destroy state = %v, want successful", destroy["state"])
 	}
 
 	towerJobs := status["towerJobs"].(map[string]interface{})

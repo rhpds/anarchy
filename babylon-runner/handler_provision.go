@@ -116,7 +116,7 @@ func runProvision(rc *RunContext) error {
 					"actions": map[string]interface{}{
 						"provision": map[string]interface{}{
 							"completeTimestamp": ts,
-							"status":           "successful",
+							"state":            "successful",
 						},
 					},
 				},
@@ -202,7 +202,7 @@ func handleProvisionError(rc *RunContext) error {
 				"actions": map[string]interface{}{
 					"provision": map[string]interface{}{
 						"completeTimestamp": ts,
-						"status":           "error",
+						"state":            "error",
 					},
 				},
 				"towerJobs": map[string]interface{}{
@@ -251,7 +251,7 @@ func handleProvisionFailed(rc *RunContext) error {
 				"actions": map[string]interface{}{
 					"provision": map[string]interface{}{
 						"completeTimestamp": ts,
-						"status":           "failed",
+						"state":            "failed",
 					},
 				},
 				"towerJobs": map[string]interface{}{
@@ -290,7 +290,7 @@ func handleProvisionCanceled(rc *RunContext) error {
 				"actions": map[string]interface{}{
 					"provision": map[string]interface{}{
 						"completeTimestamp": ts,
-						"status":           "canceled",
+						"state":            "canceled",
 					},
 				},
 				"towerJobs": map[string]interface{}{

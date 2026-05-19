@@ -115,7 +115,7 @@ func handleDestroyComplete(rc *RunContext) error {
 				"actions": map[string]interface{}{
 					"destroy": map[string]interface{}{
 						"completeTimestamp": ts,
-						"status":            "successful",
+						"state":             "successful",
 					},
 				},
 				"towerJobs": map[string]interface{}{
@@ -157,7 +157,7 @@ func handleDestroyError(rc *RunContext) error {
 				"actions": map[string]interface{}{
 					"destroy": map[string]interface{}{
 						"completeTimestamp": ts,
-						"status":            "error",
+						"state":             "error",
 					},
 				},
 				"towerJobs": map[string]interface{}{
@@ -198,7 +198,7 @@ func handleDestroyFailed(rc *RunContext) error {
 				"actions": map[string]interface{}{
 					"destroy": map[string]interface{}{
 						"completeTimestamp": ts,
-						"status":            "failed",
+						"state":             "failed",
 					},
 				},
 				"towerJobs": map[string]interface{}{
@@ -239,7 +239,7 @@ func handleDestroyCanceled(rc *RunContext) error {
 				"actions": map[string]interface{}{
 					"destroy": map[string]interface{}{
 						"completeTimestamp": ts,
-						"status":            "canceled",
+						"state":             "canceled",
 					},
 				},
 				"towerJobs": map[string]interface{}{

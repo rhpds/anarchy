@@ -52,8 +52,8 @@ func TestHandleDestroyError(t *testing.T) {
 	if destroy["completeTimestamp"] == nil {
 		t.Error("expected completeTimestamp in actions.destroy")
 	}
-	if destroy["status"] != "error" {
-		t.Errorf("destroy status = %v, want error", destroy["status"])
+	if destroy["state"] != "error" {
+		t.Errorf("destroy state = %v, want error", destroy["state"])
 	}
 
 	towerJobs := status["towerJobs"].(map[string]interface{})
@@ -126,8 +126,8 @@ func TestHandleDestroyFailed(t *testing.T) {
 	if destroy["completeTimestamp"] == nil {
 		t.Error("expected completeTimestamp in actions.destroy")
 	}
-	if destroy["status"] != "failed" {
-		t.Errorf("destroy status = %v, want failed", destroy["status"])
+	if destroy["state"] != "failed" {
+		t.Errorf("destroy state = %v, want failed", destroy["state"])
 	}
 
 	towerJobs := status["towerJobs"].(map[string]interface{})
@@ -200,8 +200,8 @@ func TestHandleDestroyCanceled(t *testing.T) {
 	if destroy["completeTimestamp"] == nil {
 		t.Error("expected completeTimestamp in actions.destroy")
 	}
-	if destroy["status"] != "canceled" {
-		t.Errorf("destroy status = %v, want canceled", destroy["status"])
+	if destroy["state"] != "canceled" {
+		t.Errorf("destroy state = %v, want canceled", destroy["state"])
 	}
 
 	towerJobs := status["towerJobs"].(map[string]interface{})
@@ -529,8 +529,8 @@ func TestHandleProvisionError(t *testing.T) {
 	if provision["completeTimestamp"] == nil {
 		t.Error("expected completeTimestamp in actions.provision")
 	}
-	if provision["status"] != "error" {
-		t.Errorf("provision status = %v, want error", provision["status"])
+	if provision["state"] != "error" {
+		t.Errorf("provision state = %v, want error", provision["state"])
 	}
 
 	towerJobs := status["towerJobs"].(map[string]interface{})
@@ -604,8 +604,8 @@ func TestHandleProvisionFailed(t *testing.T) {
 	if provision["completeTimestamp"] == nil {
 		t.Error("expected completeTimestamp in actions.provision")
 	}
-	if provision["status"] != "failed" {
-		t.Errorf("provision status = %v, want failed", provision["status"])
+	if provision["state"] != "failed" {
+		t.Errorf("provision state = %v, want failed", provision["state"])
 	}
 
 	towerJobs := status["towerJobs"].(map[string]interface{})
