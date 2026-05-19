@@ -16,15 +16,22 @@ var defaultEntryPoints = map[string]string{
 	"update":    "ansible/lifecycle_entry_point.yml",
 }
 
-// getDeployerEntryPoint returns the playbook path for the given action,
-// falling back to the default if not configured in __meta__.deployer.
+// getDeployerEntryPoint returns the playbook path for the given action.
+// Lookup order (matching Ansible defaults/main.yaml):
+//  1. __meta__.deployer.actions.{action}.entry_point
+//  2. __meta__.deployer.entry_point (generic)
+//  3. Per-action default from defaultEntryPoints
 func getDeployerEntryPoint(deployer map[string]interface{}, action string) string {
 	if deployer != nil {
-		ep := getNestedMap(deployer, "entry_points")
-		if ep != nil {
-			if v, ok := ep[action].(string); ok && v != "" && v != "disabled" && v != "none" {
-				return v
-			}
+		// 1. Per-action entry point.
+		actionEP := getNestedString(deployer, "actions", action, "entry_point")
+		if actionEP != "" {
+			return actionEP
+		}
+		// 2. Generic deployer entry point.
+		genericEP := getNestedString(deployer, "entry_point")
+		if genericEP != "" {
+			return genericEP
 		}
 	}
 	if def, ok := defaultEntryPoints[action]; ok {
@@ -223,25 +230,45 @@ func launchTowerJob(rc *RunContext, action, newState string, extraSpecVars, dyna
 		return fmt.Errorf("get tower client: %w", err)
 	}
 
+	// Organization from __meta__.tower.organization (default "babylon").
+	tower := getNestedMap(meta, "tower")
 	org := "babylon"
-	if deployer != nil {
-		if o, ok := deployer["organization"].(string); ok && o != "" {
+	if tower != nil {
+		if o, ok := tower["organization"].(string); ok && o != "" {
 			org = o
 		}
 	}
+	// Timeout from __meta__.tower.timeout (default 10800).
 	timeout := 10800
-	if deployer != nil {
-		if t, ok := deployer["timeout"].(float64); ok && t > 0 {
+	if tower != nil {
+		if t, ok := tower["timeout"].(float64); ok && t > 0 {
 			timeout = int(t)
 		}
 	}
+	// Inventory name: "{org} {tower.inventory|default('default')}".
+	inventorySuffix := "default"
+	if tower != nil {
+		if inv, ok := tower["inventory"].(string); ok && inv != "" {
+			inventorySuffix = inv
+		}
+	}
+	inventoryName := org + " " + inventorySuffix
+	// Template name: "{org} {anarchy_action_name} {uuid}".
+	// anarchy_action_name is the K8s AnarchyAction resource name.
+	actionResourceName := getNestedString(rc.Payload.Action, "metadata", "name")
+	uuid := rc.UUID()
+	templateName := fmt.Sprintf("%s %s %s", org, actionResourceName, uuid)
+
+	// Project name: "{org} {scm_url} ({scm_ref})".
+	projectName := fmt.Sprintf("%s %s (%s)", org, scmURL, scmRef)
 
 	config := TowerJobConfig{
 		Organization:  org,
-		Inventory:     rc.SubjectName,
+		Inventory:     inventoryName,
+		ProjectName:   projectName,
 		ProjectSCMURL: scmURL,
 		ProjectSCMRef: scmRef,
-		TemplateName:  rc.SubjectName + "-" + action,
+		TemplateName:  templateName,
 		Playbook:      playbook,
 		ExtraVars:     buildJobExtraVars(rc, action, dynamicJobVars),
 		Timeout:       timeout,
@@ -265,6 +292,7 @@ func launchTowerJob(rc *RunContext, action, newState string, extraSpecVars, dyna
 					"startTimestamp":    nowUTC(),
 					"completeTimestamp": nil,
 					"towerHost":        hostname,
+					"towerJobURL":      fmt.Sprintf("%s/#/jobs/%d/", hostname, jobID),
 				},
 			},
 		},

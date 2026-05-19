@@ -60,68 +60,81 @@ func TestGetDeployerEntryPoint(t *testing.T) {
 			want:     "ansible/main.yml",
 		},
 		{
-			name: "custom entry point for provision",
+			name: "per-action entry point for provision",
 			deployer: map[string]interface{}{
-				"entry_points": map[string]interface{}{
-					"provision": "custom/provision.yml",
+				"actions": map[string]interface{}{
+					"provision": map[string]interface{}{
+						"entry_point": "custom/provision.yml",
+					},
 				},
 			},
 			action: "provision",
 			want:   "custom/provision.yml",
 		},
 		{
-			name: "custom entry point for destroy",
+			name: "per-action entry point for destroy",
 			deployer: map[string]interface{}{
-				"entry_points": map[string]interface{}{
-					"destroy": "custom/destroy.yml",
+				"actions": map[string]interface{}{
+					"destroy": map[string]interface{}{
+						"entry_point": "custom/destroy.yml",
+					},
 				},
 			},
 			action: "destroy",
 			want:   "custom/destroy.yml",
 		},
 		{
-			name: "entry point set to disabled - returns default",
+			name: "generic entry_point fallback",
 			deployer: map[string]interface{}{
-				"entry_points": map[string]interface{}{
-					"provision": "disabled",
+				"entry_point": "generic/playbook.yml",
+			},
+			action: "provision",
+			want:   "generic/playbook.yml",
+		},
+		{
+			name: "per-action takes precedence over generic",
+			deployer: map[string]interface{}{
+				"entry_point": "generic/playbook.yml",
+				"actions": map[string]interface{}{
+					"provision": map[string]interface{}{
+						"entry_point": "specific/provision.yml",
+					},
 				},
 			},
 			action: "provision",
-			want:   "ansible/main.yml",
+			want:   "specific/provision.yml",
 		},
 		{
-			name: "entry point set to none - returns default",
+			name: "per-action empty - falls back to generic",
 			deployer: map[string]interface{}{
-				"entry_points": map[string]interface{}{
-					"provision": "none",
+				"entry_point": "generic/playbook.yml",
+				"actions": map[string]interface{}{
+					"provision": map[string]interface{}{
+						"entry_point": "",
+					},
 				},
 			},
 			action: "provision",
-			want:   "ansible/main.yml",
+			want:   "generic/playbook.yml",
 		},
 		{
-			name: "entry point empty string - returns default",
+			name: "action not present - falls back to generic",
 			deployer: map[string]interface{}{
-				"entry_points": map[string]interface{}{
-					"provision": "",
+				"entry_point": "generic/playbook.yml",
+				"actions": map[string]interface{}{
+					"destroy": map[string]interface{}{
+						"entry_point": "custom/destroy.yml",
+					},
 				},
 			},
 			action: "provision",
-			want:   "ansible/main.yml",
+			want:   "generic/playbook.yml",
 		},
 		{
-			name: "entry_points is nil - returns default",
+			name: "no entry_point anywhere - returns default",
 			deployer: map[string]interface{}{
-				"entry_points": nil,
-			},
-			action: "provision",
-			want:   "ansible/main.yml",
-		},
-		{
-			name: "entry_points exists but action not present",
-			deployer: map[string]interface{}{
-				"entry_points": map[string]interface{}{
-					"destroy": "custom/destroy.yml",
+				"actions": map[string]interface{}{
+					"provision": map[string]interface{}{},
 				},
 			},
 			action: "provision",

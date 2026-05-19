@@ -14,6 +14,7 @@ import (
 type TowerJobConfig struct {
 	Organization  string
 	Inventory     string
+	ProjectName   string
 	ProjectSCMURL string
 	ProjectSCMRef string
 	TemplateName  string
@@ -271,7 +272,7 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 
 	// Step 4: Create project.
 	projID, err := tc.ensureResource(token, "/api/v2/projects/", map[string]interface{}{
-		"name":         config.Organization + "-project",
+		"name":         config.ProjectName,
 		"organization": float64(orgID),
 		"scm_type":     "git",
 		"scm_url":      config.ProjectSCMURL,
