@@ -150,6 +150,14 @@ func sandboxBook(rc *RunContext, accessToken string) (*SandboxResult, error) {
 		"service_uuid": uuid,
 	}
 
+	// Add reservation from __meta__.sandbox_api.reservation.
+	if meta != nil {
+		reservation := getNestedString(meta, "sandbox_api", "reservation")
+		if reservation != "" {
+			reqBody["reservation"] = reservation
+		}
+	}
+
 	// Add annotations.
 	annotations := map[string]interface{}{
 		"guid": guid,
@@ -162,17 +170,31 @@ func sandboxBook(rc *RunContext, accessToken string) (*SandboxResult, error) {
 	}
 	subjectJobVars := rc.JobVars()
 	if subjectJobVars != nil {
-		if owner, ok := subjectJobVars["owner_email"].(string); ok {
-			annotations["owner"] = owner
-			annotations["email"] = owner
-		}
+		// owner = requester_username or student_name or "babylon"
+		owner := firstString(
+			getNestedString(rc.Payload.Subject, "metadata", "annotations", "poolboy.gpte.redhat.com/resource-requester-user"),
+			stringFromMap(subjectJobVars, "requester_username"),
+			stringFromMap(subjectJobVars, "student_name"),
+			"babylon",
+		)
+		annotations["owner"] = owner
+
+		// owner_email = requester_email or email or "unknown"
+		email := firstString(
+			getNestedString(rc.Payload.Subject, "metadata", "annotations", "poolboy.gpte.redhat.com/resource-requester-email"),
+			stringFromMap(subjectJobVars, "requester_email"),
+			stringFromMap(subjectJobVars, "email"),
+			"unknown",
+		)
+		annotations["owner_email"] = email
 	}
+	annotations["comment"] = "sandbox-api"
 	reqBody["annotations"] = annotations
 
-	// Add sandboxes/resources from __meta__.
+	// Add sandboxes/resources from __meta__ with var annotations injected.
 	if meta != nil {
 		if sandboxes, ok := meta["sandboxes"].([]interface{}); ok {
-			reqBody["resources"] = sandboxes
+			reqBody["resources"] = injectVarAnnotations(sandboxes)
 		}
 	}
 
@@ -360,6 +382,66 @@ func pollSandboxRequest(client *SandboxAPIClient, accessToken, requestID string)
 	}
 
 	return fmt.Errorf("sandbox request %s timed out after %d attempts", requestID, maxAttempts)
+}
+
+// firstString returns the first non-empty string from the given values.
+func firstString(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// stringFromMap returns the string value of a key from a map, or "" if missing.
+func stringFromMap(m map[string]interface{}, key string) string {
+	if m == nil {
+		return ""
+	}
+	s, _ := m[key].(string)
+	return s
+}
+
+// injectVarAnnotations copies the "var" and "namespace_suffix" fields
+// from each sandbox resource into its annotations, matching the Python
+// inject_var_annotations filter.
+func injectVarAnnotations(sandboxes []interface{}) []interface{} {
+	result := make([]interface{}, len(sandboxes))
+	for i, s := range sandboxes {
+		sb, ok := s.(map[string]interface{})
+		if !ok {
+			result[i] = s
+			continue
+		}
+		// Shallow copy to avoid mutating the original.
+		cp := make(map[string]interface{}, len(sb))
+		for k, v := range sb {
+			cp[k] = v
+		}
+		ann, _ := cp["annotations"].(map[string]interface{})
+		if ann == nil {
+			ann = make(map[string]interface{})
+		} else {
+			// Copy annotations too.
+			annCopy := make(map[string]interface{}, len(ann))
+			for k, v := range ann {
+				annCopy[k] = v
+			}
+			ann = annCopy
+		}
+		if v, ok := cp["var"].(string); ok && v != "" {
+			ann["var"] = v
+		}
+		if v, ok := cp["namespace_suffix"].(string); ok && v != "" {
+			ann["namespace_suffix"] = v
+		}
+		if len(ann) > 0 {
+			cp["annotations"] = ann
+		}
+		result[i] = cp
+	}
+	return result
 }
 
 // getStringDefault returns the string value of a key from a map,
