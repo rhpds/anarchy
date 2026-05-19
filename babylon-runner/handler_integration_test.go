@@ -1130,13 +1130,13 @@ func TestIntegrationExtractProvisionDataFromJob(t *testing.T) {
 		t.Errorf("ssh_user = %v, want ec2-user", pd["ssh_user"])
 	}
 
-	// Verify message_body.
-	if v["message_body"] != "Your environment is ready." {
-		t.Errorf("message_body = %v, want 'Your environment is ready.'", v["message_body"])
+	// Verify provision_message_body.
+	if v["provision_message_body"] != "Your environment is ready." {
+		t.Errorf("provision_message_body = %v, want 'Your environment is ready.'", v["provision_message_body"])
 	}
 
-	// Verify messages.
-	messages, ok := v["messages"].([]interface{})
+	// Verify provision_messages.
+	messages, ok := v["provision_messages"].([]interface{})
 	if !ok {
 		t.Fatal("messages is not a slice")
 	}

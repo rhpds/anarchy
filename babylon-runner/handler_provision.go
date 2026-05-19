@@ -139,10 +139,10 @@ func handleProvisionComplete(rc *RunContext, provisionData, messageBody, message
 		vars["provision_data"] = provisionData
 	}
 	if messageBody != nil {
-		vars["message_body"] = messageBody
+		vars["provision_message_body"] = messageBody
 	}
 	if messages != nil {
-		vars["messages"] = messages
+		vars["provision_messages"] = messages
 	}
 
 	if err := rc.SubjectUpdate(SubjectPatch{
@@ -159,12 +159,13 @@ func handleProvisionComplete(rc *RunContext, provisionData, messageBody, message
 				"actions": map[string]interface{}{
 					"provision": map[string]interface{}{
 						"completeTimestamp": ts,
-						"status":           "successful",
+						"state":            "successful",
 					},
 				},
 				"towerJobs": map[string]interface{}{
 					"provision": map[string]interface{}{
 						"completeTimestamp": ts,
+						"jobStatus":        "successful",
 					},
 				},
 			},

@@ -717,24 +717,23 @@ func TestHandleProvisionComplete(t *testing.T) {
 		t.Errorf("provision_data[key] = %v, want value", pd["key"])
 	}
 
-	// Verify message_body is set.
-	if vars["message_body"] != "Provision successful" {
-		t.Errorf("message_body = %v, want Provision successful", vars["message_body"])
+	// Verify provision_message_body is set.
+	if vars["provision_message_body"] != "Provision successful" {
+		t.Errorf("provision_message_body = %v, want Provision successful", vars["provision_message_body"])
 	}
 
-	// Verify messages is set.
-	// Note: could be []string or []interface{} depending on JSON marshalling.
-	switch msgs := vars["messages"].(type) {
+	// Verify provision_messages is set.
+	switch msgs := vars["provision_messages"].(type) {
 	case []string:
 		if len(msgs) != 2 {
-			t.Errorf("len(messages) = %d, want 2", len(msgs))
+			t.Errorf("len(provision_messages) = %d, want 2", len(msgs))
 		}
 	case []interface{}:
 		if len(msgs) != 2 {
-			t.Errorf("len(messages) = %d, want 2", len(msgs))
+			t.Errorf("len(provision_messages) = %d, want 2", len(msgs))
 		}
 	default:
-		t.Fatalf("expected messages to be a slice, got %T", vars["messages"])
+		t.Fatalf("expected provision_messages to be a slice, got %T", vars["provision_messages"])
 	}
 
 	// Verify status.
@@ -744,8 +743,8 @@ func TestHandleProvisionComplete(t *testing.T) {
 	if provision["completeTimestamp"] == nil {
 		t.Error("expected completeTimestamp in actions.provision")
 	}
-	if provision["status"] != "successful" {
-		t.Errorf("provision status = %v, want successful", provision["status"])
+	if provision["state"] != "successful" {
+		t.Errorf("provision state = %v, want successful", provision["state"])
 	}
 
 	towerJobs := status["towerJobs"].(map[string]interface{})
@@ -787,11 +786,11 @@ func TestHandleProvisionCompleteWithNilData(t *testing.T) {
 	if _, ok := vars["provision_data"]; ok {
 		t.Error("expected provision_data to be absent when nil")
 	}
-	if _, ok := vars["message_body"]; ok {
-		t.Error("expected message_body to be absent when nil")
+	if _, ok := vars["provision_message_body"]; ok {
+		t.Error("expected provision_message_body to be absent when nil")
 	}
-	if _, ok := vars["messages"]; ok {
-		t.Error("expected messages to be absent when nil")
+	if _, ok := vars["provision_messages"]; ok {
+		t.Error("expected provision_messages to be absent when nil")
 	}
 
 	// Verify current_state and healthy are still set.
