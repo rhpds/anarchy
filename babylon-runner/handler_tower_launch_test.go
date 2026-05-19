@@ -183,7 +183,7 @@ func TestGetTowerClientForAction(t *testing.T) {
 			name: "no ansible_controllers - returns error",
 			setup: func(rc *RunContext) {
 				rc.TowerBaseURL = ""
-				setNested(rc.Payload.Governor, map[string]interface{}{}, "spec", "vars", "__meta__")
+				setNested(rc.Payload.Governor, map[string]interface{}{}, "spec", "vars", "job_vars", "__meta__")
 			},
 			wantErr:     true,
 			errContains: "no ansible_controllers",
@@ -192,7 +192,7 @@ func TestGetTowerClientForAction(t *testing.T) {
 			name: "empty controllers list - returns error",
 			setup: func(rc *RunContext) {
 				rc.TowerBaseURL = ""
-				setNested(rc.Payload.Governor, []interface{}{}, "spec", "vars", "__meta__", "ansible_controllers")
+				setNested(rc.Payload.Governor, []interface{}{}, "spec", "vars", "job_vars", "__meta__", "ansible_controllers")
 			},
 			wantErr:     true,
 			errContains: "no ansible_controllers",
@@ -206,7 +206,7 @@ func TestGetTowerClientForAction(t *testing.T) {
 						"user":     "admin",
 						"password": "secret",
 					},
-				}, "spec", "vars", "__meta__", "ansible_controllers")
+				}, "spec", "vars", "job_vars", "__meta__", "ansible_controllers")
 			},
 			wantErr:     true,
 			errContains: "controller has no hostname",
@@ -221,7 +221,7 @@ func TestGetTowerClientForAction(t *testing.T) {
 						"user":     "admin",
 						"password": "secret",
 					},
-				}, "spec", "vars", "__meta__", "ansible_controllers")
+				}, "spec", "vars", "job_vars", "__meta__", "ansible_controllers")
 			},
 			wantHost: "tower1.example.com",
 			wantErr:  false,
@@ -249,8 +249,8 @@ func TestGetTowerClientForAction(t *testing.T) {
 						"password":         "secret",
 						"active_job_count": float64(15),
 					},
-				}, "spec", "vars", "__meta__", "ansible_controllers")
-				setNested(rc.Payload.Governor, "balance", "spec", "vars", "__meta__", "ansible_controller_select_mode")
+				}, "spec", "vars", "job_vars", "__meta__", "ansible_controllers")
+				setNested(rc.Payload.Governor, "balance", "spec", "vars", "job_vars", "__meta__", "ansible_controller_select_mode")
 			},
 			wantHost: "tower2.example.com",
 			wantErr:  false,
@@ -270,8 +270,8 @@ func TestGetTowerClientForAction(t *testing.T) {
 						"user":     "admin",
 						"password": "secret",
 					},
-				}, "spec", "vars", "__meta__", "ansible_controllers")
-				setNested(rc.Payload.Governor, "random", "spec", "vars", "__meta__", "ansible_controller_select_mode")
+				}, "spec", "vars", "job_vars", "__meta__", "ansible_controllers")
+				setNested(rc.Payload.Governor, "random", "spec", "vars", "job_vars", "__meta__", "ansible_controller_select_mode")
 			},
 			// Can't predict which one with random, just check no error
 			wantErr: false,
@@ -287,7 +287,7 @@ func TestGetTowerClientForAction(t *testing.T) {
 						"user":     "admin",
 						"password": "secret",
 					},
-				}, "spec", "vars", "__meta__", "ansible_controllers")
+				}, "spec", "vars", "job_vars", "__meta__", "ansible_controllers")
 			},
 			wantHost: "tower1.example.com",
 			wantErr:  false,
@@ -299,7 +299,7 @@ func TestGetTowerClientForAction(t *testing.T) {
 				setNested(rc.Payload.Governor, []interface{}{
 					"not-a-map",
 					"also-not-a-map",
-				}, "spec", "vars", "__meta__", "ansible_controllers")
+				}, "spec", "vars", "job_vars", "__meta__", "ansible_controllers")
 			},
 			wantErr:     true,
 			errContains: "no valid controllers",
@@ -478,12 +478,15 @@ func TestBuildJobExtraVars(t *testing.T) {
 			name:   "custom callback var names from deployer config",
 			action: "provision",
 			setup: func(rc *RunContext) {
-				// __meta__ lives at governor.spec.vars.__meta__, not inside job_vars.
+				// Reset governor job_vars to only contain __meta__.
 				setNested(rc.Payload.Governor, map[string]interface{}{
-					"callback_url_var":   "custom_callback_url",
-					"callback_token_var": "custom_callback_token",
-				}, "spec", "vars", "__meta__", "deployer")
-				setNested(rc.Payload.Governor, map[string]interface{}{}, "spec", "vars", "job_vars")
+					"__meta__": map[string]interface{}{
+						"deployer": map[string]interface{}{
+							"callback_url_var":   "custom_callback_url",
+							"callback_token_var": "custom_callback_token",
+						},
+					},
+				}, "spec", "vars", "job_vars")
 				setNested(rc.Payload.Subject, map[string]interface{}{
 					"uuid": "xyz789",
 				}, "spec", "vars", "job_vars")
@@ -506,18 +509,20 @@ func TestBuildJobExtraVars(t *testing.T) {
 			name:   "action extra_vars from deployer config override ACTION default",
 			action: "provision",
 			setup: func(rc *RunContext) {
-				// __meta__ lives at governor.spec.vars.__meta__.
 				setNested(rc.Payload.Governor, map[string]interface{}{
-					"actions": map[string]interface{}{
-						"provision": map[string]interface{}{
-							"extra_vars": map[string]interface{}{
-								"ACTION":     "custom_provision",
-								"extra_flag": true,
+					"__meta__": map[string]interface{}{
+						"deployer": map[string]interface{}{
+							"actions": map[string]interface{}{
+								"provision": map[string]interface{}{
+									"extra_vars": map[string]interface{}{
+										"ACTION":     "custom_provision",
+										"extra_flag": true,
+									},
+								},
 							},
 						},
 					},
-				}, "spec", "vars", "__meta__", "deployer")
-				setNested(rc.Payload.Governor, map[string]interface{}{}, "spec", "vars", "job_vars")
+				}, "spec", "vars", "job_vars")
 				setNested(rc.Payload.Subject, map[string]interface{}{
 					"uuid": "xyz789",
 				}, "spec", "vars", "job_vars")
@@ -552,11 +557,13 @@ func TestBuildJobExtraVars(t *testing.T) {
 			name:   "output_dir not set when deployer type is not agnosticd",
 			action: "provision",
 			setup: func(rc *RunContext) {
-				// __meta__ lives at governor.spec.vars.__meta__.
 				setNested(rc.Payload.Governor, map[string]interface{}{
-					"type": "helm",
-				}, "spec", "vars", "__meta__", "deployer")
-				setNested(rc.Payload.Governor, map[string]interface{}{}, "spec", "vars", "job_vars")
+					"__meta__": map[string]interface{}{
+						"deployer": map[string]interface{}{
+							"type": "helm",
+						},
+					},
+				}, "spec", "vars", "job_vars")
 				setNested(rc.Payload.Subject, map[string]interface{}{
 					"uuid": "xyz789",
 				}, "spec", "vars", "job_vars")
@@ -571,12 +578,14 @@ func TestBuildJobExtraVars(t *testing.T) {
 			name:   "scm_ref_var injection",
 			action: "provision",
 			setup: func(rc *RunContext) {
-				// __meta__ lives at governor.spec.vars.__meta__.
 				setNested(rc.Payload.Governor, map[string]interface{}{
-					"scm_ref":     "v2.0.0",
-					"scm_ref_var": "agnosticd_version",
-				}, "spec", "vars", "__meta__", "deployer")
-				setNested(rc.Payload.Governor, map[string]interface{}{}, "spec", "vars", "job_vars")
+					"__meta__": map[string]interface{}{
+						"deployer": map[string]interface{}{
+							"scm_ref":     "v2.0.0",
+							"scm_ref_var": "agnosticd_version",
+						},
+					},
+				}, "spec", "vars", "job_vars")
 				setNested(rc.Payload.Subject, map[string]interface{}{
 					"uuid": "xyz789",
 				}, "spec", "vars", "job_vars")

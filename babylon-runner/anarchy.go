@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -70,11 +71,13 @@ func (a *AnarchyClient) doWithRetry(method, url string, body interface{}) error 
 			lastErr = fmt.Errorf("%s %s: %w", method, url, err)
 			continue
 		}
+		respBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 
 		if resp.StatusCode == http.StatusOK {
 			return nil
 		}
+		slog.Warn("API error response", "method", method, "url", url, "status", resp.StatusCode, "body", string(respBody))
 		lastErr = fmt.Errorf("%s %s: status %d", method, url, resp.StatusCode)
 	}
 	return lastErr

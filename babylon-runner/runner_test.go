@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -168,7 +169,7 @@ func TestRunnerPollAndPost(t *testing.T) {
 		return nil
 	}
 
-	err := runner.pollOnce()
+	err := runner.pollOnce(context.Background())
 	if err != nil {
 		t.Fatalf("pollOnce returned error: %v", err)
 	}
@@ -232,7 +233,7 @@ func TestRunnerPollAndPostFailedHandler(t *testing.T) {
 		return fmt.Errorf("handler failed")
 	}
 
-	err := runner.pollOnce()
+	err := runner.pollOnce(context.Background())
 	if err != nil {
 		t.Fatalf("pollOnce returned error: %v", err)
 	}
@@ -382,7 +383,9 @@ func TestRunContextSandboxAPIInUse(t *testing.T) {
 					Governor: map[string]interface{}{
 						"spec": map[string]interface{}{
 							"vars": map[string]interface{}{
-								"__meta__": tt.meta,
+								"job_vars": map[string]interface{}{
+									"__meta__": tt.meta,
+								},
 							},
 						},
 					},
@@ -457,7 +460,9 @@ func TestRunContextDeployerDisabled(t *testing.T) {
 					Governor: map[string]interface{}{
 						"spec": map[string]interface{}{
 							"vars": map[string]interface{}{
-								"__meta__": tt.meta,
+								"job_vars": map[string]interface{}{
+									"__meta__": tt.meta,
+								},
 							},
 						},
 					},
@@ -499,8 +504,10 @@ func TestRunContextMeta(t *testing.T) {
 			Governor: map[string]interface{}{
 				"spec": map[string]interface{}{
 					"vars": map[string]interface{}{
-						"__meta__": map[string]interface{}{
-							"deployer": "agnosticd",
+						"job_vars": map[string]interface{}{
+							"__meta__": map[string]interface{}{
+								"deployer": "agnosticd",
+							},
 						},
 					},
 				},
@@ -596,7 +603,7 @@ func TestGetRunNoContent(t *testing.T) {
 		handlers: make(map[string]HandlerFunc),
 	}
 
-	payload, err := r.getRun()
+	payload, err := r.getRun(context.Background())
 	if err != nil {
 		t.Fatalf("getRun returned error: %v", err)
 	}
@@ -618,7 +625,7 @@ func TestGetRunTimeout(t *testing.T) {
 		handlers: make(map[string]HandlerFunc),
 	}
 
-	payload, err := r.getRun()
+	payload, err := r.getRun(context.Background())
 	if err != nil {
 		t.Fatalf("getRun returned error: %v", err)
 	}
@@ -640,7 +647,7 @@ func TestGetRunForbidden(t *testing.T) {
 		handlers: make(map[string]HandlerFunc),
 	}
 
-	payload, err := r.getRun()
+	payload, err := r.getRun(context.Background())
 	if err == nil {
 		t.Fatal("expected error for 403, got nil")
 	}
@@ -665,7 +672,7 @@ func TestGetRunUnexpectedStatus(t *testing.T) {
 		handlers: make(map[string]HandlerFunc),
 	}
 
-	payload, err := r.getRun()
+	payload, err := r.getRun(context.Background())
 	if err == nil {
 		t.Fatal("expected error for 500, got nil")
 	}
@@ -688,7 +695,7 @@ func TestGetRunEmptyBody(t *testing.T) {
 		handlers: make(map[string]HandlerFunc),
 	}
 
-	payload, err := r.getRun()
+	payload, err := r.getRun(context.Background())
 	if err != nil {
 		t.Fatalf("getRun returned error: %v", err)
 	}
@@ -711,7 +718,7 @@ func TestGetRunMalformedJSON(t *testing.T) {
 		handlers: make(map[string]HandlerFunc),
 	}
 
-	payload, err := r.getRun()
+	payload, err := r.getRun(context.Background())
 	if err == nil {
 		t.Fatal("expected error for malformed JSON, got nil")
 	}
@@ -907,7 +914,7 @@ func TestPollOnceIncludesDirectives(t *testing.T) {
 		return nil
 	}
 
-	err := runner.pollOnce()
+	err := runner.pollOnce(context.Background())
 	if err != nil {
 		t.Fatalf("pollOnce returned error: %v", err)
 	}

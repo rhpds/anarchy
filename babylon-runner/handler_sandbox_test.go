@@ -24,7 +24,7 @@ func newSimpleSandboxServer(t *testing.T, handlers map[string]http.HandlerFunc) 
 
 // withSandboxEnabled configures a RunContext for sandbox API use.
 func withSandboxEnabled(rc *RunContext, sandboxServer *httptest.Server, uuid string) {
-	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "aws_sandboxed")
+	setNested(rc.Payload.Governor, true, "spec", "vars", "job_vars", "__meta__", "aws_sandboxed")
 	setNested(rc.Payload.Governor, "test-login-token", "spec", "vars", "sandbox_api", "sandbox_api_login_token")
 	setNested(rc.Payload.Subject, uuid, "spec", "vars", "job_vars", "uuid")
 	setNested(rc.Payload.Subject, "test-guid-123", "spec", "vars", "job_vars", "guid")
@@ -107,7 +107,7 @@ func TestSandboxLoginToken(t *testing.T) {
 		{
 			name: "meta exists but no token - returns empty",
 			setupRC: func(rc *RunContext) {
-				setNested(rc.Payload.Governor, "some-value", "spec", "vars", "__meta__", "other_field")
+				setNested(rc.Payload.Governor, "some-value", "spec", "vars", "job_vars", "__meta__", "other_field")
 			},
 			wantToken: "",
 		},
@@ -317,7 +317,7 @@ func TestSandboxGet(t *testing.T) {
 		withSandboxEnabled(rc, sandboxServer, "test-uuid-123")
 		setNested(rc.Payload.Governor, []interface{}{
 			map[string]interface{}{"kind": "AwsSandbox"},
-		}, "spec", "vars", "__meta__", "sandboxes")
+		}, "spec", "vars", "job_vars", "__meta__", "sandboxes")
 
 		result, err := sandboxGet(rc, "provision")
 		if err != nil {

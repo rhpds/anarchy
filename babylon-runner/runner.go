@@ -2,12 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -98,9 +98,12 @@ func (rc *RunContext) GovernorJobVars() map[string]interface{} {
 	return getNestedMap(rc.Payload.Governor, "spec", "vars", "job_vars")
 }
 
-// Meta returns __meta__ from governor.spec.vars.
+// Meta returns __meta__ from governor.spec.vars.job_vars.
+// The Ansible runner flattens governor.spec.vars into top-level vars,
+// so __meta__ is accessed as job_vars.__meta__ in Ansible. In the raw
+// payload from the operator, it lives at spec.vars.job_vars.__meta__.
 func (rc *RunContext) Meta() map[string]interface{} {
-	return getNestedMap(rc.Payload.Governor, "spec", "vars", "__meta__")
+	return getNestedMap(rc.Payload.Governor, "spec", "vars", "job_vars", "__meta__")
 }
 
 // SandboxAPIInUse returns true if meta.aws_sandboxed is true or
@@ -228,8 +231,8 @@ func NewRunner(cfg Config) *Runner {
 
 // Run starts the polling loop. It stops on SIGTERM or SIGINT.
 func (r *Runner) Run() {
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer cancel()
 
 	ticker := time.NewTicker(time.Duration(r.cfg.PollingInterval) * time.Second)
 	defer ticker.Stop()
@@ -237,17 +240,17 @@ func (r *Runner) Run() {
 	slog.Info("runner polling loop started")
 
 	// Run an initial poll immediately before waiting for the ticker.
-	if err := r.pollOnce(); err != nil {
+	if err := r.pollOnce(ctx); err != nil && ctx.Err() == nil {
 		slog.Error("poll error", "error", err)
 	}
 
 	for {
 		select {
-		case sig := <-sigCh:
-			slog.Info("received signal, shutting down", "signal", sig)
+		case <-ctx.Done():
+			slog.Info("received signal, shutting down")
 			return
 		case <-ticker.C:
-			if err := r.pollOnce(); err != nil {
+			if err := r.pollOnce(ctx); err != nil && ctx.Err() == nil {
 				slog.Error("poll error", "error", err)
 			}
 		}
@@ -256,8 +259,8 @@ func (r *Runner) Run() {
 
 // pollOnce performs a single poll cycle: fetch a run, dispatch it to
 // the appropriate handler, and post the result back to Anarchy.
-func (r *Runner) pollOnce() error {
-	payload, err := r.getRun()
+func (r *Runner) pollOnce(ctx context.Context) error {
+	payload, err := r.getRun(ctx)
 	if err != nil {
 		return fmt.Errorf("getRun: %w", err)
 	}
@@ -309,9 +312,9 @@ func (r *Runner) pollOnce() error {
 // getRun fetches the next available run from the Anarchy API.
 // Returns nil,nil when there is no run available (timeout or 204).
 // Returns an error on 403 (authentication failure) or transport errors.
-func (r *Runner) getRun() (*RunPayload, error) {
+func (r *Runner) getRun(ctx context.Context) (*RunPayload, error) {
 	url := fmt.Sprintf("%s/run", r.cfg.AnarchyURL)
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -339,14 +342,20 @@ func (r *Runner) getRun() (*RunPayload, error) {
 		return nil, fmt.Errorf("read response body: %w", err)
 	}
 
-	// Empty body means no run available.
-	if len(body) == 0 {
+	// Empty body or JSON null means no run available.
+	if len(body) == 0 || string(body) == "null" {
 		return nil, nil
 	}
 
 	var payload RunPayload
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	// Sanity check: the operator returned 200 but the payload has no
+	// handler type — treat it as no run available.
+	if payload.Handler.Type == "" {
+		return nil, nil
 	}
 
 	return &payload, nil

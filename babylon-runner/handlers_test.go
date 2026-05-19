@@ -141,7 +141,7 @@ func withTowerServer(rc *RunContext, towerServer *httptest.Server) {
 			"scm_url": "https://github.com/example/repo.git",
 			"scm_ref": "main",
 		},
-	}, "spec", "vars", "__meta__")
+	}, "spec", "vars", "job_vars", "__meta__")
 }
 
 // --- handleEventCreate tests ---
@@ -524,7 +524,7 @@ func TestHandleEventDeleteDeployerDisabled(t *testing.T) {
 	}, "status", "towerJobs")
 
 	// Disable deployer for destroy.
-	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "deployer", "actions", "destroy", "disable")
+	setNested(rc.Payload.Governor, true, "spec", "vars", "job_vars", "__meta__", "deployer", "actions", "destroy", "disable")
 
 	if err := handleEventDelete(rc); err != nil {
 		t.Fatalf("handleEventDelete returned error: %v", err)
@@ -565,8 +565,8 @@ func TestHandleDestroyWithCatchAll(t *testing.T) {
 
 	// Set state to destroy-error and enable sandbox API with catch-all.
 	setNested(rc.Payload.Subject, "destroy-error", "spec", "vars", "current_state")
-	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "aws_sandboxed")
-	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "sandbox_api", "actions", "destroy", "catch_all")
+	setNested(rc.Payload.Governor, true, "spec", "vars", "job_vars", "__meta__", "aws_sandboxed")
+	setNested(rc.Payload.Governor, true, "spec", "vars", "job_vars", "__meta__", "sandbox_api", "actions", "destroy", "catch_all")
 
 	if err := handleDestroy(rc); err != nil {
 		t.Fatalf("handleDestroy returned error: %v", err)
@@ -1145,7 +1145,7 @@ func TestHandleDestroyDeployerDisabledNoCatchAll(t *testing.T) {
 
 	// Deployer disabled, but catch_all is false and no sandbox → should do nothing.
 	setNested(rc.Payload.Subject, "destroy-pending", "spec", "vars", "current_state")
-	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "deployer", "actions", "destroy", "disable")
+	setNested(rc.Payload.Governor, true, "spec", "vars", "job_vars", "__meta__", "deployer", "actions", "destroy", "disable")
 	// No sandbox API in use → catch_all path doesn't trigger.
 
 	if err := handleDestroy(rc); err != nil {

@@ -693,7 +693,7 @@ func TestSandboxActionEnabledNoSandboxAPI(t *testing.T) {
 		"deployer": map[string]interface{}{
 			"scm_url": "https://github.com/example/repo.git",
 		},
-	}, "spec", "vars", "__meta__")
+	}, "spec", "vars", "job_vars", "__meta__")
 
 	if !sandboxActionEnabled(rc, "start") {
 		t.Error("expected sandboxActionEnabled to return true when no sandbox_api")
@@ -710,7 +710,7 @@ func TestSandboxActionEnabledNoActions(t *testing.T) {
 		"sandbox_api": map[string]interface{}{
 			"some_config": "value",
 		},
-	}, "spec", "vars", "__meta__")
+	}, "spec", "vars", "job_vars", "__meta__")
 
 	if !sandboxActionEnabled(rc, "start") {
 		t.Error("expected sandboxActionEnabled to return true when no actions config")
@@ -731,7 +731,7 @@ func TestSandboxActionEnabledNoActionConfig(t *testing.T) {
 				},
 			},
 		},
-	}, "spec", "vars", "__meta__")
+	}, "spec", "vars", "job_vars", "__meta__")
 
 	if !sandboxActionEnabled(rc, "start") {
 		t.Error("expected sandboxActionEnabled to return true when no config for action")
@@ -752,7 +752,7 @@ func TestSandboxActionEnabledTrue(t *testing.T) {
 				},
 			},
 		},
-	}, "spec", "vars", "__meta__")
+	}, "spec", "vars", "job_vars", "__meta__")
 
 	if !sandboxActionEnabled(rc, "start") {
 		t.Error("expected sandboxActionEnabled to return true when enable=true")
@@ -773,7 +773,7 @@ func TestSandboxActionEnabledFalse(t *testing.T) {
 				},
 			},
 		},
-	}, "spec", "vars", "__meta__")
+	}, "spec", "vars", "job_vars", "__meta__")
 
 	if sandboxActionEnabled(rc, "start") {
 		t.Error("expected sandboxActionEnabled to return false when enable=false")
@@ -794,7 +794,7 @@ func TestSandboxActionEnabledNonBool(t *testing.T) {
 				},
 			},
 		},
-	}, "spec", "vars", "__meta__")
+	}, "spec", "vars", "job_vars", "__meta__")
 
 	if !sandboxActionEnabled(rc, "start") {
 		t.Error("expected sandboxActionEnabled to return true when enable is non-bool")
