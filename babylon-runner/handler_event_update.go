@@ -70,8 +70,15 @@ func handleEventUpdate(rc *RunContext) error {
 		}
 	}
 
-	// Status check: look for check_status_request_timestamp change and
-	// check_status_state being empty or "successful".
+	// Status check scheduling (only if governor has a status action).
+	govActions := rc.GovernorActions()
+	if govActions == nil {
+		return nil
+	}
+	if _, hasStatus := govActions["status"]; !hasStatus {
+		return nil
+	}
+
 	subjectVars := getNestedMap(rc.Payload.Subject, "spec", "vars")
 	if subjectVars == nil {
 		return nil
@@ -79,51 +86,45 @@ func handleEventUpdate(rc *RunContext) error {
 
 	previousState := getNestedMap(rc.Payload.Subject, "status", "previous_state")
 
-	currentTimestamp := ""
-	if ts, ok := subjectVars["check_status_request_timestamp"]; ok {
-		if s, ok := ts.(string); ok {
-			currentTimestamp = s
-		}
-	}
-
+	checkStatusState, _ := subjectVars["check_status_state"].(string)
+	currentTimestamp, _ := subjectVars["check_status_request_timestamp"].(string)
 	previousTimestamp := ""
 	if previousState != nil {
-		if ts, ok := previousState["check_status_request_timestamp"]; ok {
-			if s, ok := ts.(string); ok {
-				previousTimestamp = s
-			}
-		}
+		previousTimestamp, _ = previousState["check_status_request_timestamp"].(string)
 	}
 
-	if currentTimestamp != "" && currentTimestamp != previousTimestamp {
-		checkStatusState := ""
-		if css, ok := subjectVars["check_status_state"]; ok {
-			if s, ok := css.(string); ok {
-				checkStatusState = s
-			}
+	// Two paths to schedule status (matching Ansible):
+	// 1. Legacy: check_status_state set to "pending" directly (no timestamp).
+	// 2. Timestamp: new request_timestamp differs from last, and state is empty or "successful".
+	scheduleStatus := false
+	if checkStatusState == "pending" && currentTimestamp == "" {
+		// Legacy path.
+		scheduleStatus = true
+	} else if currentTimestamp != "" && currentTimestamp != previousTimestamp &&
+		(checkStatusState == "" || checkStatusState == "successful") {
+		scheduleStatus = true
+	}
+
+	if scheduleStatus {
+		err := rc.SubjectUpdate(SubjectPatch{
+			Patch: PatchBody{
+				Spec: &PatchSpec{
+					Vars: map[string]interface{}{
+						"check_status_state": "pending",
+					},
+				},
+				SkipUpdateProcessing: true,
+			},
+		})
+		if err != nil {
+			return err
 		}
 
-		if checkStatusState == "" || checkStatusState == "successful" {
-			err := rc.SubjectUpdate(SubjectPatch{
-				Patch: PatchBody{
-					Spec: &PatchSpec{
-						Vars: map[string]interface{}{
-							"check_status_state": "pending",
-						},
-					},
-					SkipUpdateProcessing: true,
-				},
-			})
-			if err != nil {
-				return err
-			}
-
-			err = rc.ScheduleAction(ScheduleActionRequest{
-				Action: "status",
-			})
-			if err != nil {
-				return err
-			}
+		err = rc.ScheduleAction(ScheduleActionRequest{
+			Action: "status",
+		})
+		if err != nil {
+			return err
 		}
 	}
 

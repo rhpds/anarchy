@@ -14,7 +14,7 @@ func TestHandleStartDeployerDisabled(t *testing.T) {
 
 	// Configure: sandbox API in use, deployer disabled for start.
 	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "aws_sandboxed")
-	setNested(rc.Payload.Governor, "disabled", "spec", "vars", "__meta__", "deployer", "entry_points", "start")
+	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "deployer", "actions", "start", "disable")
 
 	if err := handleStart(rc); err != nil {
 		t.Fatalf("handleStart returned error: %v", err)
@@ -83,7 +83,7 @@ func TestHandleStopDeployerDisabled(t *testing.T) {
 
 	// Configure: sandbox API in use, deployer disabled for stop.
 	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "aws_sandboxed")
-	setNested(rc.Payload.Governor, "disabled", "spec", "vars", "__meta__", "deployer", "entry_points", "stop")
+	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "deployer", "actions", "stop", "disable")
 
 	if err := handleStop(rc); err != nil {
 		t.Fatalf("handleStop returned error: %v", err)

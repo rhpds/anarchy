@@ -124,15 +124,23 @@ func (rc *RunContext) SandboxAPIInUse() bool {
 	return len(list) > 0
 }
 
-// DeployerDisabled returns true if meta.deployer.entry_points.{action}
-// equals "disabled" or "none".
+// DeployerDisabled returns true if __meta__.deployer.actions.{action}.disable
+// is truthy (matching Ansible's check).
 func (rc *RunContext) DeployerDisabled(action string) bool {
 	meta := rc.Meta()
 	if meta == nil {
 		return false
 	}
-	val := getNestedString(meta, "deployer", "entry_points", action)
-	return val == "disabled" || val == "none"
+	deployer := getNestedMap(meta, "deployer")
+	if deployer == nil {
+		return false
+	}
+	actionCfg := getNestedMap(deployer, "actions", action)
+	if actionCfg == nil {
+		return false
+	}
+	disable, ok := actionCfg["disable"].(bool)
+	return ok && disable
 }
 
 // UUID returns job_vars.uuid from the subject.

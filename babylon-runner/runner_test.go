@@ -406,8 +406,10 @@ func TestRunContextDeployerDisabled(t *testing.T) {
 			name: "disabled",
 			meta: map[string]interface{}{
 				"deployer": map[string]interface{}{
-					"entry_points": map[string]interface{}{
-						"provision": "disabled",
+					"actions": map[string]interface{}{
+						"provision": map[string]interface{}{
+							"disable": true,
+						},
 					},
 				},
 			},
@@ -415,23 +417,25 @@ func TestRunContextDeployerDisabled(t *testing.T) {
 			want:   true,
 		},
 		{
-			name: "none",
+			name: "disable false",
 			meta: map[string]interface{}{
 				"deployer": map[string]interface{}{
-					"entry_points": map[string]interface{}{
-						"provision": "none",
+					"actions": map[string]interface{}{
+						"provision": map[string]interface{}{
+							"disable": false,
+						},
 					},
 				},
 			},
 			action: "provision",
-			want:   true,
+			want:   false,
 		},
 		{
-			name: "enabled",
+			name: "no disable key",
 			meta: map[string]interface{}{
 				"deployer": map[string]interface{}{
-					"entry_points": map[string]interface{}{
-						"provision": "main.yml",
+					"actions": map[string]interface{}{
+						"provision": map[string]interface{}{},
 					},
 				},
 			},

@@ -738,7 +738,7 @@ func TestIntegrationStartWithSandboxDeployerDisabled(t *testing.T) {
 
 	rc := newTestRunContext(t, server)
 	configureSandboxRC(t, rc, sandboxServer.URL)
-	setNested(rc.Payload.Governor, "disabled", "spec", "vars", "__meta__", "deployer", "entry_points", "start")
+	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "deployer", "actions", "start", "disable")
 
 	if err := handleStart(rc); err != nil {
 		t.Fatalf("handleStart returned error: %v", err)
@@ -1347,7 +1347,7 @@ func TestIntegrationProvisionDeployerDisabledSandbox(t *testing.T) {
 	rc.ActionName = "provision"
 	configureSandboxRC(t, rc, sandboxServer.URL)
 	setNested(rc.Payload.Subject, "provision-pending", "spec", "vars", "current_state")
-	setNested(rc.Payload.Governor, "disabled", "spec", "vars", "__meta__", "deployer", "entry_points", "provision")
+	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "deployer", "actions", "provision", "disable")
 
 	if err := handleProvision(rc); err != nil {
 		t.Fatalf("handleProvision returned error: %v", err)
@@ -1518,7 +1518,7 @@ func TestIntegrationStopDeployerDisabledSandbox(t *testing.T) {
 
 	rc := newTestRunContext(t, server)
 	configureSandboxRC(t, rc, sandboxServer.URL)
-	setNested(rc.Payload.Governor, "disabled", "spec", "vars", "__meta__", "deployer", "entry_points", "stop")
+	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "deployer", "actions", "stop", "disable")
 	setNested(rc.Payload.Subject, "started", "spec", "vars", "current_state")
 
 	if err := handleStop(rc); err != nil {

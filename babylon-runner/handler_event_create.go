@@ -5,46 +5,46 @@ import (
 )
 
 // handleEventCreate handles the "create" subject event. It initializes a
-// newly created subject by merging governor job_vars, generating a UUID,
-// setting default cloud_provider/platform, and scheduling the provision action.
+// newly created subject by setting cloud_provider, platform, uuid in
+// job_vars (matching Ansible's handle-event-create.yaml), then scheduling
+// the provision action.
 func handleEventCreate(rc *RunContext) error {
 	// Initialize subject if not already done.
 	if rc.CurrentState() == "" {
-		// Start with governor job_vars as defaults, then merge subject job_vars
-		// on top so that subject-level values take precedence.
-		jobVars := make(map[string]interface{})
-		if gjv := rc.GovernorJobVars(); gjv != nil {
-			mergeMap(jobVars, gjv)
-		}
-		if sjv := rc.JobVars(); sjv != nil {
-			mergeMap(jobVars, sjv)
-		}
+		govJV := rc.GovernorJobVars()
 
-		// Generate UUID if not already set.
-		if _, ok := jobVars["uuid"]; !ok {
-			jobVars["uuid"] = uuid.New().String()
-		}
-
-		// Set cloud_provider from governor job_vars (default "none").
-		if _, ok := jobVars["cloud_provider"]; !ok {
-			govJV := rc.GovernorJobVars()
-			if govJV != nil {
-				if cp, ok := govJV["cloud_provider"]; ok {
-					jobVars["cloud_provider"] = cp
-				} else {
-					jobVars["cloud_provider"] = "none"
-				}
-			} else {
-				jobVars["cloud_provider"] = "none"
+		// cloud_provider from governor job_vars, default "none".
+		cloudProvider := "none"
+		if govJV != nil {
+			if cp, ok := govJV["cloud_provider"].(string); ok && cp != "" {
+				cloudProvider = cp
 			}
 		}
 
-		// Set platform default.
-		if _, ok := jobVars["platform"]; !ok {
-			jobVars["platform"] = "RHPDS"
+		// platform from governor job_vars, default "RHPDS".
+		platform := "RHPDS"
+		if govJV != nil {
+			if p, ok := govJV["platform"].(string); ok && p != "" {
+				platform = p
+			}
 		}
 
-		// Update subject with initial state and merged job_vars.
+		// uuid: use existing subject uuid if set, otherwise generate.
+		subjectUUID := uuid.New().String()
+		if sjv := rc.JobVars(); sjv != nil {
+			if u, ok := sjv["uuid"].(string); ok && u != "" {
+				subjectUUID = u
+			}
+		}
+
+		// Only set the 3 specific fields in job_vars (matching Ansible).
+		// anarchy_subject_update deep-merges into existing job_vars.
+		jobVarsPatch := map[string]interface{}{
+			"cloud_provider": cloudProvider,
+			"platform":       platform,
+			"uuid":           subjectUUID,
+		}
+
 		if err := rc.SubjectUpdate(SubjectPatch{
 			Patch: PatchBody{
 				Metadata: &PatchMetadata{
@@ -55,7 +55,7 @@ func handleEventCreate(rc *RunContext) error {
 				Spec: &PatchSpec{
 					Vars: map[string]interface{}{
 						"current_state": "provision-pending",
-						"job_vars":      jobVars,
+						"job_vars":      jobVarsPatch,
 					},
 				},
 				SkipUpdateProcessing: true,
