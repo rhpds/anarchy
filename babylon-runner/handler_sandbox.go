@@ -11,7 +11,8 @@ import (
 type SandboxResult struct {
 	Status      string                 // "success", "queued", "error", "not-found"
 	Placement   map[string]interface{} // raw placement data
-	DynamicVars map[string]interface{} // extracted job vars from resources
+	DynamicVars map[string]interface{} // extracted job vars (with creds) for Tower extra_vars
+	SubjectVars map[string]interface{} // extracted vars (no creds) for subject/provision_data
 	Labels      map[string]string      // extracted labels
 }
 
@@ -146,6 +147,7 @@ func sandboxGet(rc *RunContext, action string) (*SandboxResult, error) {
 		Status:      "success",
 		Placement:   placement,
 		DynamicVars: dynamicVars,
+		SubjectVars: subjectVars,
 		Labels:      labels,
 	}, nil
 }

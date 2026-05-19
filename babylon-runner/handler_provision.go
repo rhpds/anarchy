@@ -46,14 +46,15 @@ func runProvision(rc *RunContext) error {
 	}
 
 	// Sandbox API integration: get or book placement.
-	var dynamicJobVars map[string]interface{}
+	var sandboxResult *SandboxResult
 	if rc.SandboxAPIInUse() {
-		result, err := sandboxGet(rc, "provision")
+		var err error
+		sandboxResult, err = sandboxGet(rc, "provision")
 		if err != nil {
 			slog.Error("runProvision: sandbox get error", "subject", rc.SubjectName, "error", err)
 			return handleProvisionError(rc)
 		}
-		switch result.Status {
+		switch sandboxResult.Status {
 		case "error":
 			return handleProvisionError(rc)
 		case "queued":
@@ -83,12 +84,14 @@ func runProvision(rc *RunContext) error {
 			}
 			return rc.ContinueAction("30s")
 		}
-		// Success: capture dynamic vars (with creds) for Tower.
-		dynamicJobVars = result.DynamicVars
 	}
 
 	if !rc.DeployerDisabled("provision") {
 		// Launch Tower job for provisioning.
+		var dynamicJobVars map[string]interface{}
+		if sandboxResult != nil {
+			dynamicJobVars = sandboxResult.DynamicVars
+		}
 		if err := launchTowerJob(rc, "provision", "provisioning", nil, dynamicJobVars); err != nil {
 			slog.Error("runProvision: tower launch failed", "subject", rc.SubjectName, "error", err)
 			return handleProvisionError(rc)
@@ -99,6 +102,14 @@ func runProvision(rc *RunContext) error {
 	// Deployer disabled and sandbox API in use: mark as started immediately.
 	if rc.SandboxAPIInUse() {
 		ts := nowUTC()
+		specVars := map[string]interface{}{
+			"current_state": "started",
+			"healthy":       true,
+		}
+		// Set provision_data from sandbox vars (matching Ansible).
+		if sandboxResult != nil && len(sandboxResult.SubjectVars) > 0 {
+			specVars["provision_data"] = sandboxResult.SubjectVars
+		}
 		if err := rc.SubjectUpdate(SubjectPatch{
 			Patch: PatchBody{
 				Metadata: &PatchMetadata{
@@ -107,10 +118,7 @@ func runProvision(rc *RunContext) error {
 					},
 				},
 				Spec: &PatchSpec{
-					Vars: map[string]interface{}{
-						"current_state": "started",
-						"healthy":       true,
-					},
+					Vars: specVars,
 				},
 				Status: map[string]interface{}{
 					"actions": map[string]interface{}{
