@@ -232,16 +232,18 @@ func TestSandboxGet(t *testing.T) {
 					"status": "available",
 					"resources": []interface{}{
 						map[string]interface{}{
-							"name":  "sandbox-aws-1",
-							"kind":  "AwsSandbox",
-							"cloud": "aws",
-							"credentials": map[string]interface{}{
-								"aws_access_key_id":     "AKIATEST",
-								"aws_secret_access_key": "secret123",
-								"aws_default_region":    "us-east-1",
+							"name": "sandbox-aws-1",
+							"kind": "AwsSandbox",
+							"credentials": []interface{}{
+								map[string]interface{}{
+									"kind":                  "aws_iam_key",
+									"aws_access_key_id":     "AKIATEST",
+									"aws_secret_access_key": "secret123",
+								},
 							},
 							"hosted_zone_id": "Z1234567890ABC",
 							"account_id":     "123456789012",
+							"zone":           "sandbox.example.com",
 						},
 					},
 				}
@@ -265,12 +267,12 @@ func TestSandboxGet(t *testing.T) {
 			t.Errorf("Status = %s, want 'success'", result.Status)
 		}
 
-		// Verify extracted vars.
+		// DynamicVars (creds=true) should have credential fields.
 		if result.DynamicVars["aws_access_key_id"] != "AKIATEST" {
 			t.Errorf("aws_access_key_id = %v, want 'AKIATEST'", result.DynamicVars["aws_access_key_id"])
 		}
-		if result.DynamicVars["hosted_zone_id"] != "Z1234567890ABC" {
-			t.Errorf("hosted_zone_id = %v, want 'Z1234567890ABC'", result.DynamicVars["hosted_zone_id"])
+		if result.DynamicVars["sandbox_hosted_zone_id"] != "Z1234567890ABC" {
+			t.Errorf("sandbox_hosted_zone_id = %v, want 'Z1234567890ABC'", result.DynamicVars["sandbox_hosted_zone_id"])
 		}
 
 		// Verify labels.
@@ -428,9 +430,17 @@ func TestSandboxBook(t *testing.T) {
 					"resources": []interface{}{
 						map[string]interface{}{
 							"name": "sandbox-1",
-							"credentials": map[string]interface{}{
-								"api_key": "key123",
+							"kind": "AwsSandbox",
+							"credentials": []interface{}{
+								map[string]interface{}{
+									"kind":                  "aws_iam_key",
+									"aws_access_key_id":     "AKIA-BOOK",
+									"aws_secret_access_key": "secret-book",
+								},
 							},
+							"hosted_zone_id": "Z-BOOK",
+							"account_id":     "999999999999",
+							"zone":           "book.example.com",
 						},
 					},
 				})
@@ -452,8 +462,14 @@ func TestSandboxBook(t *testing.T) {
 		if result.Status != "success" {
 			t.Errorf("Status = %s, want 'success'", result.Status)
 		}
-		if result.DynamicVars["api_key"] != "key123" {
-			t.Errorf("api_key = %v, want 'key123'", result.DynamicVars["api_key"])
+		if result.DynamicVars["aws_access_key_id"] != "AKIA-BOOK" {
+			t.Errorf("aws_access_key_id = %v, want 'AKIA-BOOK'", result.DynamicVars["aws_access_key_id"])
+		}
+		if result.DynamicVars["sandbox_name"] != "sandbox-1" {
+			t.Errorf("sandbox_name = %v, want 'sandbox-1'", result.DynamicVars["sandbox_name"])
+		}
+		if result.Labels["sandbox"] != "sandbox-1" {
+			t.Errorf("sandbox label = %v, want 'sandbox-1'", result.Labels["sandbox"])
 		}
 	})
 
@@ -874,15 +890,11 @@ func TestPollSandboxRequest(t *testing.T) {
 // --- TestExtractSandboxVars ---
 
 func TestExtractSandboxVars(t *testing.T) {
-	t.Run("empty resources - empty vars and labels", func(t *testing.T) {
+	t.Run("empty resources - empty vars", func(t *testing.T) {
 		placement := map[string]interface{}{}
-
-		vars, labels := extractSandboxVars(placement)
+		vars := extractSandboxVars(placement, true)
 		if len(vars) != 0 {
 			t.Errorf("expected empty vars, got %d items", len(vars))
-		}
-		if len(labels) != 0 {
-			t.Errorf("expected empty labels, got %d items", len(labels))
 		}
 	})
 
@@ -890,124 +902,401 @@ func TestExtractSandboxVars(t *testing.T) {
 		placement := map[string]interface{}{
 			"resources": "not-an-array",
 		}
-
-		vars, labels := extractSandboxVars(placement)
+		vars := extractSandboxVars(placement, true)
 		if len(vars) != 0 {
 			t.Errorf("expected empty vars, got %d items", len(vars))
 		}
-		if len(labels) != 0 {
-			t.Errorf("expected empty labels, got %d items", len(labels))
-		}
 	})
 
-	t.Run("single resource with credentials - credentials flattened", func(t *testing.T) {
+	t.Run("AwsSandbox with creds=true", func(t *testing.T) {
 		placement := map[string]interface{}{
 			"resources": []interface{}{
 				map[string]interface{}{
-					"name":  "my-sandbox",
-					"kind":  "AwsSandbox",
-					"cloud": "aws",
-					"credentials": map[string]interface{}{
-						"aws_access_key_id":     "AKIA123",
-						"aws_secret_access_key": "secret",
-						"aws_default_region":    "us-west-2",
+					"name":           "my-sandbox",
+					"kind":           "AwsSandbox",
+					"hosted_zone_id": "Z1234",
+					"account_id":     "111111111111",
+					"zone":           "sandbox123.example.com",
+					"credentials": []interface{}{
+						map[string]interface{}{
+							"kind":                  "aws_iam_key",
+							"aws_access_key_id":     "AKIA123",
+							"aws_secret_access_key": "secret",
+						},
 					},
 				},
 			},
 		}
 
-		vars, labels := extractSandboxVars(placement)
+		vars := extractSandboxVars(placement, true)
 
+		if vars["sandbox_name"] != "my-sandbox" {
+			t.Errorf("sandbox_name = %v, want my-sandbox", vars["sandbox_name"])
+		}
+		if vars["sandbox_hosted_zone_id"] != "Z1234" {
+			t.Errorf("sandbox_hosted_zone_id = %v, want Z1234", vars["sandbox_hosted_zone_id"])
+		}
+		if vars["HostedZoneId"] != "Z1234" {
+			t.Errorf("HostedZoneId = %v, want Z1234", vars["HostedZoneId"])
+		}
+		if vars["sandbox_account"] != "111111111111" {
+			t.Errorf("sandbox_account = %v, want 111111111111", vars["sandbox_account"])
+		}
+		if vars["sandbox_account_id"] != "111111111111" {
+			t.Errorf("sandbox_account_id = %v, want 111111111111", vars["sandbox_account_id"])
+		}
+		if vars["sandbox_zone"] != "sandbox123.example.com" {
+			t.Errorf("sandbox_zone = %v, want sandbox123.example.com", vars["sandbox_zone"])
+		}
+		if vars["subdomain_base_suffix"] != ".sandbox123.example.com" {
+			t.Errorf("subdomain_base_suffix = %v, want .sandbox123.example.com", vars["subdomain_base_suffix"])
+		}
 		if vars["aws_access_key_id"] != "AKIA123" {
-			t.Errorf("aws_access_key_id = %v, want 'AKIA123'", vars["aws_access_key_id"])
+			t.Errorf("aws_access_key_id = %v, want AKIA123", vars["aws_access_key_id"])
+		}
+		if vars["sandbox_aws_access_key_id"] != "AKIA123" {
+			t.Errorf("sandbox_aws_access_key_id = %v, want AKIA123", vars["sandbox_aws_access_key_id"])
 		}
 		if vars["aws_secret_access_key"] != "secret" {
-			t.Errorf("aws_secret_access_key = %v, want 'secret'", vars["aws_secret_access_key"])
+			t.Errorf("aws_secret_access_key = %v, want secret", vars["aws_secret_access_key"])
 		}
-		if vars["aws_default_region"] != "us-west-2" {
-			t.Errorf("aws_default_region = %v, want 'us-west-2'", vars["aws_default_region"])
+		if vars["sandbox_aws_secret_access_key"] != "secret" {
+			t.Errorf("sandbox_aws_secret_access_key = %v, want secret", vars["sandbox_aws_secret_access_key"])
 		}
-		if vars["sandbox_name_0"] != "my-sandbox" {
-			t.Errorf("sandbox_name_0 = %v, want 'my-sandbox'", vars["sandbox_name_0"])
+		// sandboxes deep copy included with creds=true
+		sandboxes, ok := vars["sandboxes"].([]interface{})
+		if !ok || len(sandboxes) != 1 {
+			t.Errorf("expected sandboxes with 1 element, got %v", vars["sandboxes"])
 		}
-		if vars["sandbox_kind_0"] != "AwsSandbox" {
-			t.Errorf("sandbox_kind_0 = %v, want 'AwsSandbox'", vars["sandbox_kind_0"])
+	})
+
+	t.Run("AwsSandbox with creds=false - no credentials", func(t *testing.T) {
+		placement := map[string]interface{}{
+			"resources": []interface{}{
+				map[string]interface{}{
+					"name":           "my-sandbox",
+					"kind":           "AwsSandbox",
+					"hosted_zone_id": "Z1234",
+					"account_id":     "111111111111",
+					"zone":           "sandbox123.example.com",
+					"credentials": []interface{}{
+						map[string]interface{}{
+							"kind":                  "aws_iam_key",
+							"aws_access_key_id":     "AKIA123",
+							"aws_secret_access_key": "secret",
+						},
+					},
+				},
+			},
 		}
-		if vars["sandbox_cloud_0"] != "aws" {
-			t.Errorf("sandbox_cloud_0 = %v, want 'aws'", vars["sandbox_cloud_0"])
+
+		vars := extractSandboxVars(placement, false)
+
+		// Non-cred fields still present.
+		if vars["sandbox_name"] != "my-sandbox" {
+			t.Errorf("sandbox_name = %v, want my-sandbox", vars["sandbox_name"])
 		}
+		if vars["sandbox_zone"] != "sandbox123.example.com" {
+			t.Errorf("sandbox_zone = %v, want sandbox123.example.com", vars["sandbox_zone"])
+		}
+		// Cred fields must be absent.
+		if _, ok := vars["aws_access_key_id"]; ok {
+			t.Error("aws_access_key_id should not be present with creds=false")
+		}
+		if _, ok := vars["sandbox_aws_secret_access_key"]; ok {
+			t.Error("sandbox_aws_secret_access_key should not be present with creds=false")
+		}
+		// No sandboxes deep copy without creds.
+		if _, ok := vars["sandboxes"]; ok {
+			t.Error("sandboxes should not be present with creds=false")
+		}
+	})
+
+	t.Run("OcpSandbox with creds=true", func(t *testing.T) {
+		placement := map[string]interface{}{
+			"resources": []interface{}{
+				map[string]interface{}{
+					"name":           "ocp-ns",
+					"kind":           "OcpSandbox",
+					"namespace":      "user-ns",
+					"ocp_cluster":    "cluster1",
+					"api_url":        "https://api.cluster1.example.com:6443",
+					"ingress_domain": "apps.cluster1.example.com",
+					"console_url":    "https://console.cluster1.example.com",
+					"credentials": []interface{}{
+						map[string]interface{}{
+							"kind":  "ServiceAccount",
+							"token": "sa-token-123",
+						},
+						map[string]interface{}{
+							"kind":     "KeycloakUser",
+							"username": "user1",
+							"password": "pass1",
+						},
+					},
+					"cluster_additional_vars": map[string]interface{}{
+						"deployer": map[string]interface{}{
+							"ocp4_workload_custom_var": "value1",
+						},
+					},
+				},
+			},
+		}
+
+		vars := extractSandboxVars(placement, true)
+
+		if vars["sandbox_openshift_name"] != "ocp-ns" {
+			t.Errorf("sandbox_openshift_name = %v, want ocp-ns", vars["sandbox_openshift_name"])
+		}
+		if vars["sandbox_openshift_namespace"] != "user-ns" {
+			t.Errorf("sandbox_openshift_namespace = %v, want user-ns", vars["sandbox_openshift_namespace"])
+		}
+		if vars["sandbox_openshift_cluster"] != "cluster1" {
+			t.Errorf("sandbox_openshift_cluster = %v, want cluster1", vars["sandbox_openshift_cluster"])
+		}
+		if vars["sandbox_openshift_api_url"] != "https://api.cluster1.example.com:6443" {
+			t.Errorf("sandbox_openshift_api_url = %v", vars["sandbox_openshift_api_url"])
+		}
+		if vars["sandbox_openshift_apps_domain"] != "apps.cluster1.example.com" {
+			t.Errorf("sandbox_openshift_apps_domain = %v", vars["sandbox_openshift_apps_domain"])
+		}
+		if vars["sandbox_openshift_console_url"] != "https://console.cluster1.example.com" {
+			t.Errorf("sandbox_openshift_console_url = %v", vars["sandbox_openshift_console_url"])
+		}
+		if vars["sandbox_openshift_api_key"] != "sa-token-123" {
+			t.Errorf("sandbox_openshift_api_key = %v, want sa-token-123", vars["sandbox_openshift_api_key"])
+		}
+		if vars["sandbox_openshift_api_token"] != "sa-token-123" {
+			t.Errorf("sandbox_openshift_api_token = %v, want sa-token-123", vars["sandbox_openshift_api_token"])
+		}
+		if vars["sandbox_openshift_user"] != "user1" {
+			t.Errorf("sandbox_openshift_user = %v, want user1", vars["sandbox_openshift_user"])
+		}
+		if vars["sandbox_openshift_password"] != "pass1" {
+			t.Errorf("sandbox_openshift_password = %v, want pass1", vars["sandbox_openshift_password"])
+		}
+		// cluster_additional_vars.deployer merged.
+		if vars["ocp4_workload_custom_var"] != "value1" {
+			t.Errorf("ocp4_workload_custom_var = %v, want value1", vars["ocp4_workload_custom_var"])
+		}
+	})
+
+	t.Run("IBMResourceGroupSandbox with creds=true", func(t *testing.T) {
+		placement := map[string]interface{}{
+			"resources": []interface{}{
+				map[string]interface{}{
+					"kind": "IBMResourceGroupSandbox",
+					"credentials": []interface{}{
+						map[string]interface{}{
+							"apikey": "ibm-key-123",
+							"name":   "rg-name",
+						},
+					},
+					"additional_vars": map[string]interface{}{
+						"deployer": map[string]interface{}{
+							"ibm_custom_var": "value2",
+						},
+					},
+				},
+			},
+		}
+
+		vars := extractSandboxVars(placement, true)
+
+		if vars["ibmcloud_api_key"] != "ibm-key-123" {
+			t.Errorf("ibmcloud_api_key = %v, want ibm-key-123", vars["ibmcloud_api_key"])
+		}
+		if vars["ibmcloud_resource_group_name"] != "rg-name" {
+			t.Errorf("ibmcloud_resource_group_name = %v, want rg-name", vars["ibmcloud_resource_group_name"])
+		}
+		if vars["ibm_custom_var"] != "value2" {
+			t.Errorf("ibm_custom_var = %v, want value2", vars["ibm_custom_var"])
+		}
+	})
+
+	t.Run("generic kind with creds=true - raw credentials", func(t *testing.T) {
+		placement := map[string]interface{}{
+			"resources": []interface{}{
+				map[string]interface{}{
+					"kind": "AzureSandbox",
+					"name": "azure-sb",
+					"credentials": []interface{}{
+						map[string]interface{}{
+							"client_id": "cid",
+						},
+					},
+				},
+			},
+		}
+
+		vars := extractSandboxVars(placement, true)
+
+		creds, ok := vars["credentials"].([]interface{})
+		if !ok || len(creds) != 1 {
+			t.Errorf("expected credentials with 1 element, got %v", vars["credentials"])
+		}
+	})
+
+	t.Run("generic kind with creds=false - no credentials", func(t *testing.T) {
+		placement := map[string]interface{}{
+			"resources": []interface{}{
+				map[string]interface{}{
+					"kind": "AzureSandbox",
+					"name": "azure-sb",
+					"credentials": []interface{}{
+						map[string]interface{}{
+							"client_id": "cid",
+						},
+					},
+				},
+			},
+		}
+
+		vars := extractSandboxVars(placement, false)
+
+		if _, ok := vars["credentials"]; ok {
+			t.Error("credentials should not be present with creds=false")
+		}
+	})
+
+	t.Run("var annotation routes to named key", func(t *testing.T) {
+		placement := map[string]interface{}{
+			"resources": []interface{}{
+				map[string]interface{}{
+					"name":           "main-aws",
+					"kind":           "AwsSandbox",
+					"hosted_zone_id": "Z-MAIN",
+					"account_id":     "000000000000",
+					"zone":           "main.example.com",
+				},
+				map[string]interface{}{
+					"name":           "extra-aws",
+					"kind":           "AwsSandbox",
+					"hosted_zone_id": "Z-EXTRA",
+					"account_id":     "111111111111",
+					"zone":           "extra.example.com",
+					"annotations": map[string]interface{}{
+						"var": "sandbox2",
+					},
+				},
+			},
+		}
+
+		vars := extractSandboxVars(placement, false)
+
+		// Main resource merged at top level.
+		if vars["sandbox_name"] != "main-aws" {
+			t.Errorf("sandbox_name = %v, want main-aws", vars["sandbox_name"])
+		}
+		// Annotated resource under its var name.
+		sub, ok := vars["sandbox2"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("sandbox2 not found or wrong type: %v", vars["sandbox2"])
+		}
+		if sub["sandbox_name"] != "extra-aws" {
+			t.Errorf("sandbox2.sandbox_name = %v, want extra-aws", sub["sandbox_name"])
+		}
+		if sub["sandbox_zone"] != "extra.example.com" {
+			t.Errorf("sandbox2.sandbox_zone = %v, want extra.example.com", sub["sandbox_zone"])
+		}
+	})
+}
+
+// --- TestExtractSandboxLabels ---
+
+func TestExtractSandboxLabels(t *testing.T) {
+	t.Run("empty resources - empty labels", func(t *testing.T) {
+		placement := map[string]interface{}{}
+		labels := extractSandboxLabels(placement)
+		if len(labels) != 0 {
+			t.Errorf("expected empty labels, got %d items", len(labels))
+		}
+	})
+
+	t.Run("single resource", func(t *testing.T) {
+		placement := map[string]interface{}{
+			"resources": []interface{}{
+				map[string]interface{}{
+					"name": "my-sandbox",
+					"kind": "AwsSandbox",
+				},
+			},
+		}
+		labels := extractSandboxLabels(placement)
 
 		if labels["sandbox"] != "my-sandbox" {
-			t.Errorf("sandbox label = %s, want 'my-sandbox'", labels["sandbox"])
+			t.Errorf("sandbox = %v, want my-sandbox", labels["sandbox"])
+		}
+		if labels["AwsSandbox"] != "my-sandbox" {
+			t.Errorf("AwsSandbox = %v, want my-sandbox", labels["AwsSandbox"])
 		}
 	})
 
-	t.Run("multiple resources - all extracted, first name becomes label", func(t *testing.T) {
+	t.Run("multiple resources - different kinds", func(t *testing.T) {
 		placement := map[string]interface{}{
 			"resources": []interface{}{
 				map[string]interface{}{
-					"name":  "sandbox-1",
-					"kind":  "AwsSandbox",
-					"cloud": "aws",
+					"name": "aws-sb",
+					"kind": "AwsSandbox",
 				},
 				map[string]interface{}{
-					"name":  "sandbox-2",
-					"kind":  "GcpSandbox",
-					"cloud": "gcp",
+					"name": "ocp-sb",
+					"kind": "OcpSandbox",
 				},
 			},
 		}
+		labels := extractSandboxLabels(placement)
 
-		vars, labels := extractSandboxVars(placement)
-
-		if vars["sandbox_name_0"] != "sandbox-1" {
-			t.Errorf("sandbox_name_0 = %v, want 'sandbox-1'", vars["sandbox_name_0"])
+		if labels["sandbox"] != "aws-sb" {
+			t.Errorf("sandbox = %v, want aws-sb", labels["sandbox"])
 		}
-		if vars["sandbox_name_1"] != "sandbox-2" {
-			t.Errorf("sandbox_name_1 = %v, want 'sandbox-2'", vars["sandbox_name_1"])
+		if labels["AwsSandbox"] != "aws-sb" {
+			t.Errorf("AwsSandbox = %v, want aws-sb", labels["AwsSandbox"])
 		}
-		if vars["sandbox_kind_0"] != "AwsSandbox" {
-			t.Errorf("sandbox_kind_0 = %v, want 'AwsSandbox'", vars["sandbox_kind_0"])
-		}
-		if vars["sandbox_kind_1"] != "GcpSandbox" {
-			t.Errorf("sandbox_kind_1 = %v, want 'GcpSandbox'", vars["sandbox_kind_1"])
-		}
-
-		if labels["sandbox"] != "sandbox-1" {
-			t.Errorf("sandbox label = %s, want 'sandbox-1'", labels["sandbox"])
+		if labels["OcpSandbox"] != "ocp-sb" {
+			t.Errorf("OcpSandbox = %v, want ocp-sb", labels["OcpSandbox"])
 		}
 	})
 
-	t.Run("resource with hosted_zone_id and account_id fields", func(t *testing.T) {
+	t.Run("multiple resources - same kind with increment", func(t *testing.T) {
 		placement := map[string]interface{}{
 			"resources": []interface{}{
 				map[string]interface{}{
-					"name":           "aws-sandbox",
-					"hosted_zone_id": "Z1234567890ABC",
-					"account_id":     "123456789012",
-					"zone":           "us-east-1a",
-					"project_id":     "my-project-123",
+					"name": "aws-1",
+					"kind": "AwsSandbox",
+				},
+				map[string]interface{}{
+					"name": "aws-2",
+					"kind": "AwsSandbox",
 				},
 			},
 		}
+		labels := extractSandboxLabels(placement)
 
-		vars, labels := extractSandboxVars(placement)
+		if labels["sandbox"] != "aws-1" {
+			t.Errorf("sandbox = %v, want aws-1", labels["sandbox"])
+		}
+		if labels["AwsSandbox"] != "aws-1" {
+			t.Errorf("AwsSandbox = %v, want aws-1", labels["AwsSandbox"])
+		}
+		if labels["AwsSandbox2"] != "aws-2" {
+			t.Errorf("AwsSandbox2 = %v, want aws-2", labels["AwsSandbox2"])
+		}
+	})
 
-		if vars["hosted_zone_id"] != "Z1234567890ABC" {
-			t.Errorf("hosted_zone_id = %v, want 'Z1234567890ABC'", vars["hosted_zone_id"])
+	t.Run("sanitizeKind removes non-alphanumeric chars", func(t *testing.T) {
+		placement := map[string]interface{}{
+			"resources": []interface{}{
+				map[string]interface{}{
+					"name": "sb",
+					"kind": "Aws-Sand_box.V2",
+				},
+			},
 		}
-		if vars["account_id"] != "123456789012" {
-			t.Errorf("account_id = %v, want '123456789012'", vars["account_id"])
-		}
-		if vars["zone"] != "us-east-1a" {
-			t.Errorf("zone = %v, want 'us-east-1a'", vars["zone"])
-		}
-		if vars["project_id"] != "my-project-123" {
-			t.Errorf("project_id = %v, want 'my-project-123'", vars["project_id"])
-		}
+		labels := extractSandboxLabels(placement)
 
-		if labels["sandbox"] != "aws-sandbox" {
-			t.Errorf("sandbox label = %s, want 'aws-sandbox'", labels["sandbox"])
+		if labels["AwsSandboxV2"] != "sb" {
+			t.Errorf("expected AwsSandboxV2 label, got keys: %v", labels)
 		}
 	})
 }

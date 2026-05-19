@@ -319,8 +319,9 @@ func checkProvisionQueue(rc *RunContext) error {
 		return rc.ContinueAction("30s")
 
 	default:
-		// Success: extract vars, update subject, and restart provision.
-		dynamicVars, labels := extractSandboxVars(placement)
+		// Success: extract vars (no creds for subject), update subject, and restart provision.
+		dynamicVars := extractSandboxVars(placement, false)
+		labels := extractSandboxLabels(placement)
 		patch := PatchBody{SkipUpdateProcessing: true}
 
 		// Merge labels.

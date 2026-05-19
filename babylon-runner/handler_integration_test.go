@@ -86,15 +86,18 @@ type sandboxServerConfig struct {
 func testResources() []interface{} {
 	return []interface{}{
 		map[string]interface{}{
-			"name":  "sandbox-001",
-			"kind":  "AwsSandbox",
-			"cloud": "aws",
-			"credentials": map[string]interface{}{
-				"aws_access_key_id":     "AKIA-TEST-KEY",
-				"aws_secret_access_key": "test-secret-key",
+			"name": "sandbox-001",
+			"kind": "AwsSandbox",
+			"credentials": []interface{}{
+				map[string]interface{}{
+					"kind":                  "aws_iam_key",
+					"aws_access_key_id":     "AKIA-TEST-KEY",
+					"aws_secret_access_key": "test-secret-key",
+				},
 			},
 			"hosted_zone_id": "Z12345",
 			"account_id":     "123456789012",
+			"zone":           "sandbox001.example.com",
 		},
 	}
 }
@@ -248,7 +251,7 @@ func TestIntegrationProvisionWithSandboxAndTower(t *testing.T) {
 		t.Fatalf("expected at least 4 calls, got %d", len(*calls))
 	}
 
-	// Find the sandbox vars update PATCH (has job_vars with aws_access_key_id).
+	// Find the sandbox vars update PATCH (has job_vars with sandbox_name — non-cred field).
 	var sandboxPatch map[string]interface{}
 	for _, c := range *calls {
 		if c.Method != http.MethodPatch {
@@ -268,25 +271,29 @@ func TestIntegrationProvisionWithSandboxAndTower(t *testing.T) {
 		}
 		jv, _ := v["job_vars"].(map[string]interface{})
 		if jv != nil {
-			if _, ok := jv["aws_access_key_id"]; ok {
+			if _, ok := jv["sandbox_name"]; ok {
 				sandboxPatch = p
 				break
 			}
 		}
 	}
 	if sandboxPatch == nil {
-		t.Fatal("expected a PATCH call with sandbox vars (aws_access_key_id) in job_vars")
+		t.Fatal("expected a PATCH call with sandbox vars (sandbox_name) in job_vars")
 	}
 
-	// Verify sandbox vars were extracted into job_vars.
+	// Verify sandbox vars were extracted into job_vars (non-cred fields only).
 	specPatch := sandboxPatch["spec"].(map[string]interface{})
 	varsPatch := specPatch["vars"].(map[string]interface{})
 	jv := varsPatch["job_vars"].(map[string]interface{})
-	if jv["aws_access_key_id"] != "AKIA-TEST-KEY" {
-		t.Errorf("aws_access_key_id = %v, want AKIA-TEST-KEY", jv["aws_access_key_id"])
+	if jv["sandbox_name"] != "sandbox-001" {
+		t.Errorf("sandbox_name = %v, want sandbox-001", jv["sandbox_name"])
 	}
-	if jv["aws_secret_access_key"] != "test-secret-key" {
-		t.Errorf("aws_secret_access_key = %v, want test-secret-key", jv["aws_secret_access_key"])
+	if jv["sandbox_zone"] != "sandbox001.example.com" {
+		t.Errorf("sandbox_zone = %v, want sandbox001.example.com", jv["sandbox_zone"])
+	}
+	// Credentials should NOT be in subject job_vars (creds=false).
+	if _, found := jv["aws_access_key_id"]; found {
+		t.Error("aws_access_key_id should not be in subject job_vars (creds=false)")
 	}
 
 	// Verify sandbox labels.
@@ -478,13 +485,17 @@ func TestIntegrationCheckProvisionQueueSuccess(t *testing.T) {
 		t.Fatal("expected a PATCH setting current_state = provision-pending")
 	}
 
-	// Verify sandbox vars merged into job_vars.
+	// Verify sandbox vars merged into job_vars (non-cred fields only).
 	specPatch := pendingPatch["spec"].(map[string]interface{})
 	varsPatch := specPatch["vars"].(map[string]interface{})
 	jv, _ := varsPatch["job_vars"].(map[string]interface{})
 	if jv != nil {
-		if jv["aws_access_key_id"] != "AKIA-TEST-KEY" {
-			t.Errorf("aws_access_key_id = %v, want AKIA-TEST-KEY", jv["aws_access_key_id"])
+		if jv["sandbox_name"] != "sandbox-001" {
+			t.Errorf("sandbox_name = %v, want sandbox-001", jv["sandbox_name"])
+		}
+		// Credentials should NOT be in subject job_vars (creds=false).
+		if _, found := jv["aws_access_key_id"]; found {
+			t.Error("aws_access_key_id should not be in subject job_vars (creds=false)")
 		}
 	}
 
@@ -1140,92 +1151,104 @@ func TestIntegrationExtractProvisionDataFromJob(t *testing.T) {
 }
 
 func TestIntegrationExtractSandboxVars(t *testing.T) {
-	// Test: extractSandboxVars with placement containing multiple resources with credentials.
+	// Test: extractSandboxVars + extractSandboxLabels with AwsSandbox + OcpSandbox placement.
 	placement := map[string]interface{}{
 		"uuid":   "placement-001",
 		"status": "success",
 		"resources": []interface{}{
 			map[string]interface{}{
-				"name":  "sandbox-alpha",
-				"kind":  "AwsSandbox",
-				"cloud": "aws",
-				"credentials": map[string]interface{}{
-					"aws_access_key_id":     "AKIA-ALPHA",
-					"aws_secret_access_key": "secret-alpha",
-				},
+				"name":           "sandbox-alpha",
+				"kind":           "AwsSandbox",
 				"hosted_zone_id": "Z-ALPHA",
 				"account_id":     "111111111111",
+				"zone":           "alpha.example.com",
+				"credentials": []interface{}{
+					map[string]interface{}{
+						"kind":                  "aws_iam_key",
+						"aws_access_key_id":     "AKIA-ALPHA",
+						"aws_secret_access_key": "secret-alpha",
+					},
+				},
 			},
 			map[string]interface{}{
-				"name":  "sandbox-beta",
-				"kind":  "AzureSandbox",
-				"cloud": "azure",
-				"credentials": map[string]interface{}{
-					"azure_client_id":     "client-beta",
-					"azure_client_secret": "secret-beta",
+				"name":           "ocp-beta",
+				"kind":           "OcpSandbox",
+				"namespace":      "user-ns",
+				"ocp_cluster":    "cluster-beta",
+				"api_url":        "https://api.beta.example.com:6443",
+				"ingress_domain": "apps.beta.example.com",
+				"console_url":    "https://console.beta.example.com",
+				"credentials": []interface{}{
+					map[string]interface{}{
+						"kind":  "ServiceAccount",
+						"token": "sa-token-beta",
+					},
 				},
-				"project_id": "proj-beta",
+				"annotations": map[string]interface{}{
+					"var": "openshift",
+				},
 			},
 		},
 	}
 
-	vars, labels := extractSandboxVars(placement)
+	// With creds=true, both resources should produce their specific vars.
+	vars := extractSandboxVars(placement, true)
 
-	// First resource name is used as sandbox label.
-	if labels["sandbox"] != "sandbox-alpha" {
-		t.Errorf("sandbox label = %v, want sandbox-alpha", labels["sandbox"])
+	// AwsSandbox (main) vars at top level.
+	if vars["sandbox_name"] != "sandbox-alpha" {
+		t.Errorf("sandbox_name = %v, want sandbox-alpha", vars["sandbox_name"])
 	}
-
-	// Verify resource names.
-	if vars["sandbox_name_0"] != "sandbox-alpha" {
-		t.Errorf("sandbox_name_0 = %v, want sandbox-alpha", vars["sandbox_name_0"])
+	if vars["sandbox_hosted_zone_id"] != "Z-ALPHA" {
+		t.Errorf("sandbox_hosted_zone_id = %v, want Z-ALPHA", vars["sandbox_hosted_zone_id"])
 	}
-	if vars["sandbox_name_1"] != "sandbox-beta" {
-		t.Errorf("sandbox_name_1 = %v, want sandbox-beta", vars["sandbox_name_1"])
-	}
-
-	// Verify kinds.
-	if vars["sandbox_kind_0"] != "AwsSandbox" {
-		t.Errorf("sandbox_kind_0 = %v, want AwsSandbox", vars["sandbox_kind_0"])
-	}
-	if vars["sandbox_kind_1"] != "AzureSandbox" {
-		t.Errorf("sandbox_kind_1 = %v, want AzureSandbox", vars["sandbox_kind_1"])
-	}
-
-	// Verify clouds.
-	if vars["sandbox_cloud_0"] != "aws" {
-		t.Errorf("sandbox_cloud_0 = %v, want aws", vars["sandbox_cloud_0"])
-	}
-	if vars["sandbox_cloud_1"] != "azure" {
-		t.Errorf("sandbox_cloud_1 = %v, want azure", vars["sandbox_cloud_1"])
-	}
-
-	// Verify first resource credentials flattened into vars.
 	if vars["aws_access_key_id"] != "AKIA-ALPHA" {
 		t.Errorf("aws_access_key_id = %v, want AKIA-ALPHA", vars["aws_access_key_id"])
 	}
-	if vars["aws_secret_access_key"] != "secret-alpha" {
-		t.Errorf("aws_secret_access_key = %v, want secret-alpha", vars["aws_secret_access_key"])
+	if vars["subdomain_base_suffix"] != ".alpha.example.com" {
+		t.Errorf("subdomain_base_suffix = %v, want .alpha.example.com", vars["subdomain_base_suffix"])
 	}
 
-	// Verify second resource credentials flattened (overwrites are expected for flat keys).
-	if vars["azure_client_id"] != "client-beta" {
-		t.Errorf("azure_client_id = %v, want client-beta", vars["azure_client_id"])
+	// OcpSandbox under "openshift" var annotation.
+	ocpVars, ok := vars["openshift"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("openshift var not found or wrong type: %v", vars["openshift"])
 	}
-	if vars["azure_client_secret"] != "secret-beta" {
-		t.Errorf("azure_client_secret = %v, want secret-beta", vars["azure_client_secret"])
+	if ocpVars["sandbox_openshift_name"] != "ocp-beta" {
+		t.Errorf("openshift.sandbox_openshift_name = %v, want ocp-beta", ocpVars["sandbox_openshift_name"])
+	}
+	if ocpVars["sandbox_openshift_api_token"] != "sa-token-beta" {
+		t.Errorf("openshift.sandbox_openshift_api_token = %v, want sa-token-beta", ocpVars["sandbox_openshift_api_token"])
 	}
 
-	// Verify metadata fields.
-	if vars["hosted_zone_id"] != "Z-ALPHA" {
-		t.Errorf("hosted_zone_id = %v, want Z-ALPHA", vars["hosted_zone_id"])
+	// sandboxes deep copy present with creds=true.
+	sandboxes, ok := vars["sandboxes"].([]interface{})
+	if !ok || len(sandboxes) != 2 {
+		t.Errorf("expected sandboxes with 2 elements, got %v", vars["sandboxes"])
 	}
-	if vars["account_id"] != "111111111111" {
-		t.Errorf("account_id = %v, want 111111111111", vars["account_id"])
+
+	// Labels.
+	labels := extractSandboxLabels(placement)
+	if labels["sandbox"] != "sandbox-alpha" {
+		t.Errorf("sandbox label = %v, want sandbox-alpha", labels["sandbox"])
 	}
-	// project_id from second resource (overwrites if first had it too).
-	if vars["project_id"] != "proj-beta" {
-		t.Errorf("project_id = %v, want proj-beta", vars["project_id"])
+	if labels["AwsSandbox"] != "sandbox-alpha" {
+		t.Errorf("AwsSandbox label = %v, want sandbox-alpha", labels["AwsSandbox"])
+	}
+	if labels["OcpSandbox"] != "ocp-beta" {
+		t.Errorf("OcpSandbox label = %v, want ocp-beta", labels["OcpSandbox"])
+	}
+
+	// With creds=false, credential vars should be absent.
+	noCreds := extractSandboxVars(placement, false)
+	if _, found := noCreds["aws_access_key_id"]; found {
+		t.Error("aws_access_key_id should not be present with creds=false")
+	}
+	if _, found := noCreds["sandboxes"]; found {
+		t.Error("sandboxes should not be present with creds=false")
+	}
+	// Non-cred vars still present.
+	if noCreds["sandbox_name"] != "sandbox-alpha" {
+		t.Errorf("sandbox_name = %v, want sandbox-alpha (creds=false)", noCreds["sandbox_name"])
 	}
 }
 

@@ -102,20 +102,24 @@ func sandboxGet(rc *RunContext, action string) (*SandboxResult, error) {
 		return &SandboxResult{Status: "queued", Placement: placement}, nil
 	}
 
-	// Extract vars and update subject.
-	dynamicVars, labels := extractSandboxVars(placement)
-	if len(dynamicVars) > 0 || len(labels) > 0 {
+	// Extract vars (without creds for subject) and labels.
+	subjectVars := extractSandboxVars(placement, false)
+	labels := extractSandboxLabels(placement)
+	// Extract vars with creds for Tower extra_vars.
+	dynamicVars := extractSandboxVars(placement, true)
+
+	if len(subjectVars) > 0 || len(labels) > 0 {
 		patch := PatchBody{SkipUpdateProcessing: true}
 		if len(labels) > 0 {
 			patch.Metadata = &PatchMetadata{Labels: labels}
 		}
-		if len(dynamicVars) > 0 {
-			// Merge dynamic vars into existing job_vars.
+		if len(subjectVars) > 0 {
+			// Merge non-secret vars into existing job_vars.
 			jv := rc.JobVars()
 			if jv == nil {
 				jv = make(map[string]interface{})
 			}
-			mergeMap(jv, dynamicVars)
+			mergeMap(jv, subjectVars)
 			patch.Spec = &PatchSpec{
 				Vars: map[string]interface{}{
 					"job_vars": jv,
@@ -180,7 +184,8 @@ func sandboxBook(rc *RunContext, accessToken string) (*SandboxResult, error) {
 
 	switch statusCode {
 	case http.StatusOK:
-		dynamicVars, labels := extractSandboxVars(result)
+		dynamicVars := extractSandboxVars(result, true)
+		labels := extractSandboxLabels(result)
 		return &SandboxResult{
 			Status:      "success",
 			Placement:   result,
@@ -357,56 +362,284 @@ func pollSandboxRequest(client *SandboxAPIClient, accessToken, requestID string)
 	return fmt.Errorf("sandbox request %s timed out after %d attempts", requestID, maxAttempts)
 }
 
-// extractSandboxVars extracts dynamic job variables and labels from a
-// placement response. Resources contain credentials and account info
-// that get merged into job_vars for Tower job extra_vars.
-func extractSandboxVars(placement map[string]interface{}) (vars map[string]interface{}, labels map[string]string) {
-	vars = make(map[string]interface{})
-	labels = make(map[string]string)
+// getStringDefault returns the string value of a key from a map,
+// returning defaultVal if missing or not a string.
+func getStringDefault(m map[string]interface{}, key, defaultVal string) string {
+	v, ok := m[key]
+	if !ok {
+		return defaultVal
+	}
+	s, ok := v.(string)
+	if !ok {
+		return defaultVal
+	}
+	return s
+}
+
+// getCredList returns the credentials list from a resource map.
+func getCredList(res map[string]interface{}) []map[string]interface{} {
+	raw, ok := res["credentials"].([]interface{})
+	if !ok {
+		return nil
+	}
+	var creds []map[string]interface{}
+	for _, c := range raw {
+		if cm, ok := c.(map[string]interface{}); ok {
+			creds = append(creds, cm)
+		}
+	}
+	return creds
+}
+
+// deepCopySlice creates a deep copy of a []interface{} value.
+func deepCopySlice(src []interface{}) []interface{} {
+	dst := make([]interface{}, len(src))
+	for i, v := range src {
+		switch vv := v.(type) {
+		case map[string]interface{}:
+			dst[i] = deepCopyMap(vv)
+		case []interface{}:
+			dst[i] = deepCopySlice(vv)
+		default:
+			dst[i] = v
+		}
+	}
+	return dst
+}
+
+// deepCopyMap creates a deep copy of a map[string]interface{} value.
+func deepCopyMap(src map[string]interface{}) map[string]interface{} {
+	dst := make(map[string]interface{}, len(src))
+	for k, v := range src {
+		switch vv := v.(type) {
+		case map[string]interface{}:
+			dst[k] = deepCopyMap(vv)
+		case []interface{}:
+			dst[k] = deepCopySlice(vv)
+		default:
+			dst[k] = v
+		}
+	}
+	return dst
+}
+
+// extractAwsSandboxVars extracts vars from an AwsSandbox resource.
+func extractAwsSandboxVars(res map[string]interface{}, creds bool) map[string]interface{} {
+	name := getStringDefault(res, "name", "unknown")
+	hostedZoneID := getStringDefault(res, "hosted_zone_id", "unknown")
+	accountID := getStringDefault(res, "account_id", "unknown")
+	zone := getStringDefault(res, "zone", "unknown")
+
+	toMerge := map[string]interface{}{
+		"sandbox_name":           name,
+		"sandbox_hosted_zone_id": hostedZoneID,
+		"HostedZoneId":           hostedZoneID,
+		"sandbox_account":        accountID,
+		"sandbox_account_id":     accountID,
+		"sandbox_zone":           zone,
+		"subdomain_base_suffix":  "." + zone,
+	}
+
+	if creds {
+		for _, cred := range getCredList(res) {
+			if getStringDefault(cred, "kind", "none") == "aws_iam_key" {
+				toMerge["sandbox_aws_access_key_id"] = getStringDefault(cred, "aws_access_key_id", "unknown")
+				toMerge["aws_access_key_id"] = getStringDefault(cred, "aws_access_key_id", "unknown")
+				toMerge["sandbox_aws_secret_access_key"] = getStringDefault(cred, "aws_secret_access_key", "unknown")
+				toMerge["aws_secret_access_key"] = getStringDefault(cred, "aws_secret_access_key", "unknown")
+				// Include raw credentials list.
+				rawCreds, _ := res["credentials"].([]interface{})
+				toMerge["sandbox_credentials"] = rawCreds
+				break
+			}
+		}
+	}
+
+	return toMerge
+}
+
+// extractOcpSandboxVars extracts vars from an OcpSandbox resource.
+func extractOcpSandboxVars(res map[string]interface{}, creds bool) map[string]interface{} {
+	toMerge := map[string]interface{}{
+		"sandbox_openshift_name":        getStringDefault(res, "name", "unknown"),
+		"sandbox_openshift_namespace":   getStringDefault(res, "namespace", "unknown"),
+		"sandbox_openshift_cluster":     getStringDefault(res, "ocp_cluster", "unknown"),
+		"sandbox_openshift_api_url":     getStringDefault(res, "api_url", "unknown"),
+		"sandbox_openshift_apps_domain": getStringDefault(res, "ingress_domain", "unknown"),
+		"sandbox_openshift_console_url": getStringDefault(res, "console_url", "unknown"),
+	}
+
+	if creds {
+		for _, cred := range getCredList(res) {
+			credKind := getStringDefault(cred, "kind", "none")
+			if credKind == "ServiceAccount" {
+				toMerge["sandbox_openshift_api_key"] = getStringDefault(cred, "token", "unknown")
+				toMerge["sandbox_openshift_api_token"] = getStringDefault(cred, "token", "unknown")
+				rawCreds, _ := res["credentials"].([]interface{})
+				toMerge["sandbox_openshift_credentials"] = rawCreds
+			}
+			if credKind == "KeycloakUser" {
+				toMerge["sandbox_openshift_user"] = getStringDefault(cred, "username", "unknown")
+				toMerge["sandbox_openshift_password"] = getStringDefault(cred, "password", "unknown")
+			}
+		}
+	}
+
+	// Merge additional vars from cluster_additional_vars or additional_vars.
+	additionalVars := getNestedMap(res, "cluster_additional_vars", "deployer")
+	if additionalVars == nil {
+		additionalVars = getNestedMap(res, "additional_vars", "deployer")
+	}
+	for k, v := range additionalVars {
+		toMerge[k] = v
+	}
+
+	return toMerge
+}
+
+// extractIBMSandboxVars extracts vars from an IBMResourceGroupSandbox resource.
+func extractIBMSandboxVars(res map[string]interface{}, creds bool) map[string]interface{} {
+	toMerge := make(map[string]interface{})
+
+	if creds {
+		credList := getCredList(res)
+		for _, cred := range credList {
+			if getStringDefault(cred, "apikey", "") != "" {
+				// Use first credential entry's apikey and name.
+				if len(credList) > 0 {
+					toMerge["ibmcloud_api_key"] = getStringDefault(credList[0], "apikey", "unknown")
+					toMerge["ibmcloud_resource_group_name"] = getStringDefault(credList[0], "name", "unknown")
+				}
+				break
+			}
+		}
+	}
+
+	// Merge additional vars.
+	additionalVars := getNestedMap(res, "additional_vars", "deployer")
+	for k, v := range additionalVars {
+		toMerge[k] = v
+	}
+
+	return toMerge
+}
+
+// extractSandboxVars extracts dynamic job variables from a placement
+// response, matching the Python extract_sandboxes_vars filter.
+// When creds is true, credential data is included (for Tower extra_vars).
+// When creds is false, only non-secret data is included (for subject job_vars).
+func extractSandboxVars(placement map[string]interface{}, creds bool) map[string]interface{} {
+	vars := make(map[string]interface{})
 
 	resources, ok := placement["resources"].([]interface{})
 	if !ok || len(resources) == 0 {
-		return vars, labels
+		return vars
 	}
 
-	for i, r := range resources {
+	for _, r := range resources {
 		res, ok := r.(map[string]interface{})
 		if !ok {
 			continue
 		}
 
-		name, _ := res["name"].(string)
-		kind, _ := res["kind"].(string)
-		cloud, _ := res["cloud"].(string)
+		kind := getStringDefault(res, "kind", "none")
 
-		if name != "" {
-			if i == 0 {
-				labels["sandbox"] = name
-			}
-			vars[fmt.Sprintf("sandbox_name_%d", i)] = name
-		}
-		if kind != "" {
-			vars[fmt.Sprintf("sandbox_kind_%d", i)] = kind
-		}
-		if cloud != "" {
-			vars[fmt.Sprintf("sandbox_cloud_%d", i)] = cloud
-		}
-
-		// Extract credentials (e.g. AWS keys, region).
-		creds, ok := res["credentials"].(map[string]interface{})
-		if ok {
-			for k, v := range creds {
-				vars[k] = v
+		var toMerge map[string]interface{}
+		switch kind {
+		case "AwsSandbox":
+			toMerge = extractAwsSandboxVars(res, creds)
+		case "OcpSandbox":
+			toMerge = extractOcpSandboxVars(res, creds)
+		case "IBMResourceGroupSandbox":
+			toMerge = extractIBMSandboxVars(res, creds)
+		default:
+			// Any other kind: include raw credentials only.
+			toMerge = make(map[string]interface{})
+			if creds {
+				rawCreds, _ := res["credentials"].([]interface{})
+				if rawCreds != nil {
+					toMerge["credentials"] = rawCreds
+				}
 			}
 		}
 
-		// Extract additional resource metadata.
-		for _, field := range []string{"hosted_zone_id", "account_id", "zone", "project_id"} {
-			if v, ok := res[field]; ok {
-				vars[field] = v
+		// Determine target var name from annotations.
+		varName := "main"
+		if annotations, ok := res["annotations"].(map[string]interface{}); ok {
+			if v, ok := annotations["var"].(string); ok && v != "" {
+				varName = v
 			}
+		}
+
+		if varName == "main" {
+			mergeMap(vars, toMerge)
+		} else {
+			vars[varName] = toMerge
 		}
 	}
 
-	return vars, labels
+	// Add full sandboxes response for downstream use when creds included.
+	if creds {
+		vars["sandboxes"] = deepCopySlice(resources)
+	}
+
+	return vars
+}
+
+// extractSandboxLabels extracts labels from a placement response,
+// matching the Python extract_sandboxes_labels filter.
+func extractSandboxLabels(placement map[string]interface{}) map[string]string {
+	resources, ok := placement["resources"].([]interface{})
+	if !ok || len(resources) == 0 {
+		return map[string]string{}
+	}
+
+	if len(resources) == 1 {
+		res, ok := resources[0].(map[string]interface{})
+		if !ok {
+			return map[string]string{}
+		}
+		kind := sanitizeKind(getStringDefault(res, "kind", "none"))
+		name := getStringDefault(res, "name", "unknown")
+		return map[string]string{
+			"sandbox": name,
+			kind:      name,
+		}
+	}
+
+	ret := make(map[string]string)
+	increment := 2
+	for _, r := range resources {
+		res, ok := r.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		kind := sanitizeKind(getStringDefault(res, "kind", "none"))
+		name := getStringDefault(res, "name", "unknown")
+
+		if ret["sandbox"] == "" {
+			ret["sandbox"] = name
+		}
+
+		if _, exists := ret[kind]; exists {
+			ret[fmt.Sprintf("%s%d", kind, increment)] = name
+			increment++
+		} else {
+			ret[kind] = name
+		}
+	}
+
+	return ret
+}
+
+// sanitizeKind removes non-alphanumeric characters from a kind string.
+func sanitizeKind(kind string) string {
+	result := make([]byte, 0, len(kind))
+	for i := 0; i < len(kind); i++ {
+		c := kind[i]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+			result = append(result, c)
+		}
+	}
+	return string(result)
 }
