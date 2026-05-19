@@ -58,6 +58,16 @@ func (rc *RunContext) ContinueAction(after string) error {
 	})
 }
 
+// ContinueActionWithVars schedules the current action with additional vars
+// (e.g. action_retry_count).
+func (rc *RunContext) ContinueActionWithVars(after string, vars map[string]interface{}) error {
+	return rc.Anarchy.ScheduleAction(rc.SubjectName, ScheduleActionRequest{
+		Action: rc.ActionName,
+		After:  after,
+		Vars:   vars,
+	})
+}
+
 // SubjectUpdate delegates to AnarchyClient.SubjectUpdate for this subject.
 func (rc *RunContext) SubjectUpdate(patch SubjectPatch) error {
 	return rc.Anarchy.SubjectUpdate(rc.SubjectName, patch)
@@ -143,6 +153,41 @@ func (rc *RunContext) StatusActions() map[string]interface{} {
 // StatusTowerJobs returns subject.status.towerJobs.
 func (rc *RunContext) StatusTowerJobs() map[string]interface{} {
 	return getNestedMap(rc.Payload.Subject, "status", "towerJobs")
+}
+
+// ActionRetryCount returns action_retry_count from the action's spec.vars (default 0).
+func (rc *RunContext) ActionRetryCount() int {
+	if rc.Payload.Action == nil {
+		return 0
+	}
+	v := getNestedString(rc.Payload.Action, "spec", "vars", "action_retry_count")
+	if v != "" {
+		// Handle string representation.
+		n := 0
+		for _, c := range v {
+			if c >= '0' && c <= '9' {
+				n = n*10 + int(c-'0')
+			}
+		}
+		return n
+	}
+	// Try float64 (JSON numbers).
+	vars := getNestedMap(rc.Payload.Action, "spec", "vars")
+	if vars != nil {
+		if f, ok := vars["action_retry_count"].(float64); ok {
+			return int(f)
+		}
+		if i, ok := vars["action_retry_count"].(int); ok {
+			return i
+		}
+	}
+	return 0
+}
+
+// IsBeingDeleted returns true if the subject has a deletionTimestamp.
+func (rc *RunContext) IsBeingDeleted() bool {
+	ts := getNestedString(rc.Payload.Subject, "metadata", "deletionTimestamp")
+	return ts != ""
 }
 
 // GovernorActions returns governor.spec.actions.

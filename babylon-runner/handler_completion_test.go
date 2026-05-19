@@ -334,15 +334,16 @@ func TestHandleUpdateComplete(t *testing.T) {
 	}
 }
 
-// --- handleGenericActionFailure tests ---
+// --- handleStartFailure / handleStopFailure tests ---
 
-func TestHandleGenericActionFailureWithStartError(t *testing.T) {
+func TestHandleStartFailureWithError(t *testing.T) {
 	server, calls := newTestAnarchyServer(t)
 	defer server.Close()
 	rc := newTestRunContext(t, server)
+	// desired_state not set → finishes immediately.
 
-	if err := handleGenericActionFailure(rc, "start", "error"); err != nil {
-		t.Fatalf("handleGenericActionFailure returned error: %v", err)
+	if err := handleStartFailure(rc, "error"); err != nil {
+		t.Fatalf("handleStartFailure returned error: %v", err)
 	}
 
 	if len(*calls) != 1 {
@@ -408,13 +409,14 @@ func TestHandleGenericActionFailureWithStartError(t *testing.T) {
 	}
 }
 
-func TestHandleGenericActionFailureWithStopFailed(t *testing.T) {
+func TestHandleStopFailureWithFailed(t *testing.T) {
 	server, calls := newTestAnarchyServer(t)
 	defer server.Close()
 	rc := newTestRunContext(t, server)
+	// desired_state not set → finishes immediately.
 
-	if err := handleGenericActionFailure(rc, "stop", "failed"); err != nil {
-		t.Fatalf("handleGenericActionFailure returned error: %v", err)
+	if err := handleStopFailure(rc, "failed"); err != nil {
+		t.Fatalf("handleStopFailure returned error: %v", err)
 	}
 
 	if len(*calls) != 1 {
