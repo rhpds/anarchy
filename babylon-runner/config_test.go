@@ -104,3 +104,47 @@ func TestAuthHeader(t *testing.T) {
 		t.Errorf("AuthHeader() = %q, want %q", got, want)
 	}
 }
+
+func TestEnvIntInvalidValue(t *testing.T) {
+	os.Setenv("TEST_INVALID_INT", "not-a-number")
+	defer os.Unsetenv("TEST_INVALID_INT")
+
+	result := envInt("TEST_INVALID_INT", 42)
+	if result != 42 {
+		t.Errorf("envInt with invalid value = %d, want %d (default)", result, 42)
+	}
+}
+
+func TestEnvIntNegative(t *testing.T) {
+	os.Setenv("TEST_NEGATIVE_INT", "-10")
+	defer os.Unsetenv("TEST_NEGATIVE_INT")
+
+	result := envInt("TEST_NEGATIVE_INT", 42)
+	if result != -10 {
+		t.Errorf("envInt with negative value = %d, want %d", result, -10)
+	}
+}
+
+func TestConfigPollingInterval(t *testing.T) {
+	os.Setenv("ANARCHY_URL", "https://anarchy.example.com")
+	os.Setenv("RUNNER_NAME", "test-runner")
+	os.Setenv("RUNNER_TOKEN", "s3cret")
+	os.Setenv("HOSTNAME", "pod-abc-123")
+	os.Setenv("POLLING_INTERVAL", "15")
+	defer func() {
+		os.Unsetenv("ANARCHY_URL")
+		os.Unsetenv("RUNNER_NAME")
+		os.Unsetenv("RUNNER_TOKEN")
+		os.Unsetenv("HOSTNAME")
+		os.Unsetenv("POLLING_INTERVAL")
+	}()
+
+	cfg, err := configFromEnv()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.PollingInterval != 15 {
+		t.Errorf("PollingInterval = %d, want %d", cfg.PollingInterval, 15)
+	}
+}

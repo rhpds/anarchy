@@ -214,3 +214,107 @@ func TestSandboxAPIReleasePlacement(t *testing.T) {
 		t.Fatalf("ReleasePlacement returned error: %v", err)
 	}
 }
+
+func TestSandboxAPIGetRequestStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/api/v1/requests/req-123/status" {
+			t.Errorf("path = %s, want /api/v1/requests/req-123/status", r.URL.Path)
+		}
+		want := "Bearer access-token"
+		if got := r.Header.Get("Authorization"); got != want {
+			t.Errorf("Authorization = %q, want %q", got, want)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"request_id": "req-123",
+			"status":     "completed",
+		})
+	}))
+	defer server.Close()
+
+	client := NewSandboxAPIClient(server.URL)
+	result, err := client.GetRequestStatus("access-token", "req-123")
+	if err != nil {
+		t.Fatalf("GetRequestStatus returned error: %v", err)
+	}
+	if result["request_id"] != "req-123" {
+		t.Errorf("request_id = %v, want %q", result["request_id"], "req-123")
+	}
+	if result["status"] != "completed" {
+		t.Errorf("status = %v, want %q", result["status"], "completed")
+	}
+}
+
+func TestSandboxAPIGetRequestStatusError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := NewSandboxAPIClient(server.URL)
+	result, err := client.GetRequestStatus("access-token", "req-123")
+	if err == nil {
+		t.Fatal("expected error for 500, got nil")
+	}
+	if result != nil {
+		t.Errorf("result should be nil on error, got %v", result)
+	}
+}
+
+func TestSandboxAPILoginMissingToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Return response without access_token
+		json.NewEncoder(w).Encode(map[string]string{
+			"message": "login successful",
+		})
+	}))
+	defer server.Close()
+
+	client := NewSandboxAPIClient(server.URL)
+	token, err := client.Login("my-login-token")
+	if err == nil {
+		t.Fatal("expected error for missing access_token, got nil")
+	}
+	if token != "" {
+		t.Errorf("token should be empty on error, got %q", token)
+	}
+	if err.Error() != "login response missing access_token" {
+		t.Errorf("error = %q, want %q", err.Error(), "login response missing access_token")
+	}
+}
+
+func TestSandboxAPIGetPlacementError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := NewSandboxAPIClient(server.URL)
+	result, statusCode, err := client.GetPlacement("access-token", "uuid-123")
+	if err == nil {
+		t.Fatal("expected error for 500, got nil")
+	}
+	if statusCode != 500 {
+		t.Errorf("statusCode = %d, want 500", statusCode)
+	}
+	if result != nil {
+		t.Errorf("result should be nil on error, got %v", result)
+	}
+}
+
+func TestSandboxAPIReleasePlacementError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := NewSandboxAPIClient(server.URL)
+	err := client.ReleasePlacement("access-token", "uuid-123")
+	if err == nil {
+		t.Fatal("expected error for 500, got nil")
+	}
+}

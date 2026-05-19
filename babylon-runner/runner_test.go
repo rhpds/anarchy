@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestRunnerDispatchEvent(t *testing.T) {
@@ -575,5 +576,344 @@ func TestRunContextGovernorActions(t *testing.T) {
 	ga := rc.GovernorActions()
 	if ga == nil {
 		t.Fatal("GovernorActions() returned nil")
+	}
+}
+
+func TestGetRunNoContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	r := &Runner{
+		cfg:     Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t", RequestTimeout: 5},
+		client:  &http.Client{Timeout: 5 * time.Second},
+		anarchy: NewAnarchyClient(Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t"}),
+		handlers: make(map[string]HandlerFunc),
+	}
+
+	payload, err := r.getRun()
+	if err != nil {
+		t.Fatalf("getRun returned error: %v", err)
+	}
+	if payload != nil {
+		t.Errorf("getRun() = %v, want nil", payload)
+	}
+}
+
+func TestGetRunTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusRequestTimeout)
+	}))
+	defer server.Close()
+
+	r := &Runner{
+		cfg:     Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t", RequestTimeout: 5},
+		client:  &http.Client{Timeout: 5 * time.Second},
+		anarchy: NewAnarchyClient(Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t"}),
+		handlers: make(map[string]HandlerFunc),
+	}
+
+	payload, err := r.getRun()
+	if err != nil {
+		t.Fatalf("getRun returned error: %v", err)
+	}
+	if payload != nil {
+		t.Errorf("getRun() = %v, want nil", payload)
+	}
+}
+
+func TestGetRunForbidden(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	r := &Runner{
+		cfg:     Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t", RequestTimeout: 5},
+		client:  &http.Client{Timeout: 5 * time.Second},
+		anarchy: NewAnarchyClient(Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t"}),
+		handlers: make(map[string]HandlerFunc),
+	}
+
+	payload, err := r.getRun()
+	if err == nil {
+		t.Fatal("expected error for 403, got nil")
+	}
+	if payload != nil {
+		t.Errorf("payload should be nil on error, got %v", payload)
+	}
+	if !contains(err.Error(), "authentication failed") {
+		t.Errorf("error = %q, want substring %q", err.Error(), "authentication failed")
+	}
+}
+
+func TestGetRunUnexpectedStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	r := &Runner{
+		cfg:     Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t", RequestTimeout: 5},
+		client:  &http.Client{Timeout: 5 * time.Second},
+		anarchy: NewAnarchyClient(Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t"}),
+		handlers: make(map[string]HandlerFunc),
+	}
+
+	payload, err := r.getRun()
+	if err == nil {
+		t.Fatal("expected error for 500, got nil")
+	}
+	if payload != nil {
+		t.Errorf("payload should be nil on error, got %v", payload)
+	}
+}
+
+func TestGetRunEmptyBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		// Write nothing - empty body
+	}))
+	defer server.Close()
+
+	r := &Runner{
+		cfg:     Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t", RequestTimeout: 5},
+		client:  &http.Client{Timeout: 5 * time.Second},
+		anarchy: NewAnarchyClient(Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t"}),
+		handlers: make(map[string]HandlerFunc),
+	}
+
+	payload, err := r.getRun()
+	if err != nil {
+		t.Fatalf("getRun returned error: %v", err)
+	}
+	if payload != nil {
+		t.Errorf("getRun() = %v, want nil for empty body", payload)
+	}
+}
+
+func TestGetRunMalformedJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{invalid json"))
+	}))
+	defer server.Close()
+
+	r := &Runner{
+		cfg:     Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t", RequestTimeout: 5},
+		client:  &http.Client{Timeout: 5 * time.Second},
+		anarchy: NewAnarchyClient(Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t"}),
+		handlers: make(map[string]HandlerFunc),
+	}
+
+	payload, err := r.getRun()
+	if err == nil {
+		t.Fatal("expected error for malformed JSON, got nil")
+	}
+	if payload != nil {
+		t.Errorf("payload should be nil on error, got %v", payload)
+	}
+}
+
+func TestPostResultSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/run/test-run" {
+			t.Errorf("path = %s, want /run/test-run", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	r := &Runner{
+		cfg:     Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t", RequestTimeout: 5},
+		client:  &http.Client{Timeout: 5 * time.Second},
+		anarchy: NewAnarchyClient(Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t"}),
+		handlers: make(map[string]HandlerFunc),
+	}
+
+	result := RunResult{
+		Result: ResultPayload{
+			RC:     0,
+			Status: "successful",
+		},
+	}
+
+	err := r.postResult("test-run", result)
+	if err != nil {
+		t.Fatalf("postResult returned error: %v", err)
+	}
+}
+
+func TestPostResultRetryThenSuccess(t *testing.T) {
+	var attempts atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		count := attempts.Add(1)
+		if count == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	r := &Runner{
+		cfg:     Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t", RequestTimeout: 5},
+		client:  &http.Client{Timeout: 5 * time.Second},
+		anarchy: NewAnarchyClient(Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t"}),
+		handlers: make(map[string]HandlerFunc),
+	}
+
+	result := RunResult{
+		Result: ResultPayload{
+			RC:     0,
+			Status: "successful",
+		},
+	}
+
+	err := r.postResult("test-run", result)
+	if err != nil {
+		t.Fatalf("postResult returned error: %v", err)
+	}
+	if attempts.Load() < 2 {
+		t.Errorf("expected at least 2 attempts, got %d", attempts.Load())
+	}
+}
+
+func TestFinishActionDirective(t *testing.T) {
+	rc := &RunContext{
+		ActionName: "provision",
+	}
+
+	rc.FinishAction("successful")
+
+	if !rc.finished {
+		t.Error("expected finished to be true")
+	}
+	if rc.finishActionDirective == nil {
+		t.Fatal("finishActionDirective should not be nil")
+	}
+	if rc.finishActionDirective.State != "successful" {
+		t.Errorf("finishActionDirective.State = %q, want %q", rc.finishActionDirective.State, "successful")
+	}
+}
+
+func TestDeleteSubjectDirective(t *testing.T) {
+	rc := &RunContext{
+		SubjectName: "test-subject",
+	}
+
+	rc.DeleteSubject(true)
+
+	if rc.deleteSubjectDirective == nil {
+		t.Fatal("deleteSubjectDirective should not be nil")
+	}
+	if rc.deleteSubjectDirective.RemoveFinalizers != true {
+		t.Errorf("deleteSubjectDirective.RemoveFinalizers = %v, want true", rc.deleteSubjectDirective.RemoveFinalizers)
+	}
+}
+
+func TestDispatchUnregisteredHandler(t *testing.T) {
+	handlers := map[string]HandlerFunc{}
+
+	rc := &RunContext{
+		Payload: RunPayload{
+			Handler: Handler{
+				Type: "action",
+				Name: "run",
+			},
+			Action: map[string]interface{}{
+				"spec": map[string]interface{}{
+					"action": "provision",
+				},
+			},
+		},
+		ActionName: "provision",
+	}
+
+	err := dispatch(rc, handlers)
+	if err == nil {
+		t.Fatal("expected error for unregistered handler, got nil")
+	}
+	if !contains(err.Error(), "no handler registered") {
+		t.Errorf("error = %q, want substring %q", err.Error(), "no handler registered")
+	}
+}
+
+func TestPollOnceIncludesDirectives(t *testing.T) {
+	var postBody RunResult
+	runName := "test-run-directives"
+
+	payload := RunPayload{
+		Handler: Handler{
+			Type: "action",
+			Name: "run",
+		},
+		Subject: map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"name": "test-subject",
+			},
+		},
+		Run: map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"name": runName,
+			},
+		},
+		Action: map[string]interface{}{
+			"spec": map[string]interface{}{
+				"action": "provision",
+			},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/run":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodPost && r.URL.Path == fmt.Sprintf("/run/%s", runName):
+			json.NewDecoder(r.Body).Decode(&postBody)
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cfg := Config{
+		AnarchyURL:     server.URL,
+		RunnerName:     "runner",
+		PodName:        "pod",
+		RunnerToken:    "token",
+		RequestTimeout: 5,
+	}
+
+	runner := NewRunner(cfg)
+	runner.handlers["action:provision"] = func(rc *RunContext) error {
+		rc.FinishAction("successful")
+		rc.DeleteSubject(true)
+		return nil
+	}
+
+	err := runner.pollOnce()
+	if err != nil {
+		t.Fatalf("pollOnce returned error: %v", err)
+	}
+
+	if postBody.FinishAction == nil {
+		t.Fatal("FinishAction directive should not be nil")
+	}
+	if postBody.FinishAction.State != "successful" {
+		t.Errorf("FinishAction.State = %q, want %q", postBody.FinishAction.State, "successful")
+	}
+	if postBody.DeleteSubject == nil {
+		t.Fatal("DeleteSubject directive should not be nil")
+	}
+	if postBody.DeleteSubject.RemoveFinalizers != true {
+		t.Errorf("DeleteSubject.RemoveFinalizers = %v, want true", postBody.DeleteSubject.RemoveFinalizers)
 	}
 }

@@ -640,3 +640,17 @@ func TestCheckDeployerJobStillRunning(t *testing.T) {
 		t.Error("expected FinishAction NOT to be called while job is running")
 	}
 }
+
+// contains is a helper function for checking substring in tests.
+func contains(s, substr string) bool {
+	return len(s) > 0 && len(substr) > 0 && len(s) >= len(substr) && indexOf(s, substr) >= 0
+}
+
+func indexOf(s, substr string) int {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
+}
