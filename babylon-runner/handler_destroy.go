@@ -30,12 +30,16 @@ func handleDestroy(rc *RunContext) error {
 	}
 
 	// Sandbox API destroy catch-all: cleanup and delete if in error state.
+	// Source: __meta__.sandbox_api.actions.destroy.catch_all (default true)
 	if rc.SandboxAPIInUse() {
+		catchAll := true
 		meta := rc.Meta()
-		catchAll := true // default
 		if meta != nil {
-			if v, ok := meta["sandbox_api_destroy_catch_all"].(bool); ok {
-				catchAll = v
+			sbAPI := getNestedMap(meta, "sandbox_api", "actions", "destroy")
+			if sbAPI != nil {
+				if v, ok := sbAPI["catch_all"].(bool); ok {
+					catchAll = v
+				}
 			}
 		}
 

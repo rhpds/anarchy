@@ -1480,7 +1480,7 @@ func TestIntegrationDestroyErrorCatchAll(t *testing.T) {
 	rc := newTestRunContext(t, server)
 	configureSandboxRC(t, rc, sandboxServer.URL)
 	setNested(rc.Payload.Subject, "destroy-error", "spec", "vars", "current_state")
-	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "sandbox_api_destroy_catch_all")
+	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "sandbox_api", "actions", "destroy", "catch_all")
 
 	if err := handleDestroy(rc); err != nil {
 		t.Fatalf("handleDestroy returned error: %v", err)
