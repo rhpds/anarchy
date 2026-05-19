@@ -325,3 +325,145 @@ func TestHandleEventDeleteWithoutDestroy(t *testing.T) {
 		t.Error("expected FinishAction to be called")
 	}
 }
+
+// --- handleDestroy tests ---
+
+func TestHandleDestroyWithCatchAll(t *testing.T) {
+	server, calls := newTestAnarchyServer(t)
+	defer server.Close()
+
+	rc := newTestRunContext(t, server)
+
+	// Set state to destroy-error and enable sandbox API with catch-all.
+	setNested(rc.Payload.Subject, "destroy-error", "spec", "vars", "current_state")
+	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "aws_sandboxed")
+	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "sandbox_api_destroy_catch_all")
+
+	if err := handleDestroy(rc); err != nil {
+		t.Fatalf("handleDestroy returned error: %v", err)
+	}
+
+	// Should finish immediately without any API calls.
+	if len(*calls) != 0 {
+		t.Errorf("expected 0 calls with catch-all, got %d", len(*calls))
+	}
+
+	if !rc.finished {
+		t.Error("expected FinishAction to be called")
+	}
+}
+
+func TestHandleDestroyPending(t *testing.T) {
+	server, calls := newTestAnarchyServer(t)
+	defer server.Close()
+
+	rc := newTestRunContext(t, server)
+	rc.ActionName = "destroy"
+
+	// Set state to destroy-pending with no sandbox API.
+	setNested(rc.Payload.Subject, "destroy-pending", "spec", "vars", "current_state")
+
+	if err := handleDestroy(rc); err != nil {
+		t.Fatalf("handleDestroy returned error: %v", err)
+	}
+
+	// Should set startTimestamp and schedule continuation.
+	if len(*calls) != 2 {
+		t.Fatalf("expected 2 calls, got %d", len(*calls))
+	}
+
+	// First call: PATCH to set startTimestamp.
+	c0 := (*calls)[0]
+	if c0.Method != http.MethodPatch {
+		t.Errorf("call[0] method = %s, want PATCH", c0.Method)
+	}
+	patch := c0.Body["patch"].(map[string]interface{})
+	status := patch["status"].(map[string]interface{})
+	actions := status["actions"].(map[string]interface{})
+	destroy := actions["destroy"].(map[string]interface{})
+	if destroy["startTimestamp"] == nil {
+		t.Error("expected startTimestamp to be set")
+	}
+
+	// Second call: POST to schedule action continuation.
+	c1 := (*calls)[1]
+	if c1.Method != http.MethodPost {
+		t.Errorf("call[1] method = %s, want POST", c1.Method)
+	}
+	if c1.Path != "/run/subject/test-subject/actions" {
+		t.Errorf("call[1] path = %s, want /run/subject/test-subject/actions", c1.Path)
+	}
+	if c1.Body["action"] != "destroy" {
+		t.Errorf("action = %v, want destroy", c1.Body["action"])
+	}
+	if c1.Body["after"] != "5m" {
+		t.Errorf("after = %v, want 5m", c1.Body["after"])
+	}
+}
+
+func TestHandleDestroyComplete(t *testing.T) {
+	server, calls := newTestAnarchyServer(t)
+	defer server.Close()
+
+	rc := newTestRunContext(t, server)
+
+	if err := handleDestroyComplete(rc); err != nil {
+		t.Fatalf("handleDestroyComplete returned error: %v", err)
+	}
+
+	if len(*calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(*calls))
+	}
+
+	// Verify the PATCH update.
+	c0 := (*calls)[0]
+	if c0.Method != http.MethodPatch {
+		t.Errorf("call[0] method = %s, want PATCH", c0.Method)
+	}
+
+	patch := c0.Body["patch"].(map[string]interface{})
+
+	// Verify labels.
+	metadata := patch["metadata"].(map[string]interface{})
+	labels := metadata["labels"].(map[string]interface{})
+	if labels["state"] != "destroy-complete" {
+		t.Errorf("state label = %v, want destroy-complete", labels["state"])
+	}
+
+	// Verify spec vars.
+	spec := patch["spec"].(map[string]interface{})
+	vars := spec["vars"].(map[string]interface{})
+	if vars["current_state"] != "destroy-complete" {
+		t.Errorf("current_state = %v, want destroy-complete", vars["current_state"])
+	}
+
+	// Verify status.
+	status := patch["status"].(map[string]interface{})
+	actions := status["actions"].(map[string]interface{})
+	destroy := actions["destroy"].(map[string]interface{})
+	if destroy["completeTimestamp"] == nil {
+		t.Error("expected completeTimestamp in actions.destroy")
+	}
+	if destroy["status"] != "successful" {
+		t.Errorf("destroy status = %v, want successful", destroy["status"])
+	}
+
+	towerJobs := status["towerJobs"].(map[string]interface{})
+	destroyJob := towerJobs["destroy"].(map[string]interface{})
+	if destroyJob["completeTimestamp"] == nil {
+		t.Error("expected completeTimestamp in towerJobs.destroy")
+	}
+	if destroyJob["jobStatus"] != "successful" {
+		t.Errorf("jobStatus = %v, want successful", destroyJob["jobStatus"])
+	}
+
+	// Verify skip_update_processing.
+	if patch["skip_update_processing"] != true {
+		t.Error("expected skip_update_processing to be true")
+	}
+
+	// Verify FinishAction was called.
+	if !rc.finished {
+		t.Error("expected FinishAction to be called")
+	}
+}
