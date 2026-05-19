@@ -27,25 +27,21 @@ func handleStatus(rc *RunContext) error {
 
 // runStatus initiates the status check workflow.
 func runStatus(rc *RunContext) error {
-	// Set startTimestamp for status action.
-	actions := rc.StatusActions()
-	status := getNestedMap(actions, "status")
-	if status == nil || status["startTimestamp"] == nil {
-		ts := nowUTC()
-		if err := rc.SubjectUpdate(SubjectPatch{
-			Patch: PatchBody{
-				Status: map[string]interface{}{
-					"actions": map[string]interface{}{
-						"status": map[string]interface{}{
-							"startTimestamp": ts,
-						},
+	// Set startTimestamp (always, matching Ansible).
+	ts := nowUTC()
+	if err := rc.SubjectUpdate(SubjectPatch{
+		Patch: PatchBody{
+			Status: map[string]interface{}{
+				"actions": map[string]interface{}{
+					"status": map[string]interface{}{
+						"startTimestamp": ts,
 					},
 				},
-				SkipUpdateProcessing: true,
 			},
-		}); err != nil {
-			return err
-		}
+			SkipUpdateProcessing: true,
+		},
+	}); err != nil {
+		return err
 	}
 
 	if !rc.DeployerDisabled("status") {
