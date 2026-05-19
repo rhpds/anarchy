@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 )
 
 // handleUpdate routes an update action based on the current state.
@@ -22,7 +22,7 @@ func runUpdate(rc *RunContext) error {
 	if rc.SandboxAPIInUse() {
 		result, err := sandboxGet(rc, "update")
 		if err != nil {
-			log.Printf("runUpdate: sandbox get error for subject=%s: %v", rc.SubjectName, err)
+			slog.Error("runUpdate: sandbox get error", "subject", rc.SubjectName, "error", err)
 		} else if result != nil {
 			dynamicJobVars = result.DynamicVars
 		}
@@ -30,7 +30,7 @@ func runUpdate(rc *RunContext) error {
 
 	// Launch Tower job for update.
 	if err := launchTowerJob(rc, "update", "updating", nil, dynamicJobVars); err != nil {
-		log.Printf("runUpdate: tower launch failed for subject=%s: %v", rc.SubjectName, err)
+		slog.Error("runUpdate: tower launch failed", "subject", rc.SubjectName, "error", err)
 		return err
 	}
 	return rc.ContinueAction("5m")

@@ -1,21 +1,22 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"os"
 )
 
 func main() {
-	log.SetOutput(os.Stdout)
-	log.SetFlags(log.Ldate | log.Ltime | log.LUTC)
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, nil)))
 
 	cfg, err := configFromEnv()
 	if err != nil {
-		log.Fatalf("configuration error: %v", err)
+		slog.Error("configuration error", "error", err)
+		os.Exit(1)
 	}
 
-	log.Printf("babylon-runner starting name=%s pod=%s url=%s poll=%ds timeout=%ds",
-		cfg.RunnerName, cfg.PodName, cfg.AnarchyURL, cfg.PollingInterval, cfg.RequestTimeout)
+	slog.Info("babylon-runner starting",
+		"name", cfg.RunnerName, "pod", cfg.PodName, "url", cfg.AnarchyURL,
+		"poll", cfg.PollingInterval, "timeout", cfg.RequestTimeout)
 
 	runner := NewRunner(cfg)
 	registerHandlers(runner)

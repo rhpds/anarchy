@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 )
@@ -227,13 +227,13 @@ func sandboxBook(rc *RunContext, accessToken string) (*SandboxResult, error) {
 func sandboxCleanup(rc *RunContext) error {
 	uuid := rc.UUID()
 	if uuid == "" {
-		log.Printf("sandboxCleanup: no uuid, skipping")
+		slog.Warn("sandboxCleanup: no uuid, skipping")
 		return nil
 	}
 
 	token := sandboxLoginToken(rc)
 	if token == "" {
-		log.Printf("sandboxCleanup: no login token, skipping")
+		slog.Warn("sandboxCleanup: no login token, skipping")
 		return nil
 	}
 
@@ -247,7 +247,7 @@ func sandboxCleanup(rc *RunContext) error {
 		return fmt.Errorf("release placement: %w", err)
 	}
 
-	log.Printf("sandboxCleanup: released placement uuid=%s", uuid)
+	slog.Info("sandboxCleanup: released placement", "uuid", uuid)
 	return nil
 }
 
@@ -364,20 +364,20 @@ func pollSandboxRequest(client *SandboxAPIClient, accessToken, requestID string)
 
 		status, err := client.GetRequestStatus(accessToken, requestID)
 		if err != nil {
-			log.Printf("pollSandboxRequest: error checking request %s: %v", requestID, err)
+			slog.Error("pollSandboxRequest: error checking request", "requestID", requestID, "error", err)
 			continue
 		}
 
 		state, _ := status["status"].(string)
 		switch state {
 		case "success", "complete":
-			log.Printf("pollSandboxRequest: request %s completed successfully", requestID)
+			slog.Info("pollSandboxRequest: request completed successfully", "requestID", requestID)
 			return nil
 		case "error", "failed":
 			msg, _ := status["message"].(string)
 			return fmt.Errorf("sandbox request %s failed: %s", requestID, msg)
 		default:
-			log.Printf("pollSandboxRequest: request %s status=%s, continuing", requestID, state)
+			slog.Info("pollSandboxRequest: request still in progress", "requestID", requestID, "status", state)
 		}
 	}
 

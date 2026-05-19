@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 )
 
@@ -18,7 +18,7 @@ func handleProvision(rc *RunContext) error {
 		}
 		return nil
 	default:
-		log.Printf("handleProvision: unhandled state %q for subject=%s", rc.CurrentState(), rc.SubjectName)
+		slog.Warn("handleProvision: unhandled state", "state", rc.CurrentState(), "subject", rc.SubjectName)
 		return nil
 	}
 }
@@ -50,7 +50,7 @@ func runProvision(rc *RunContext) error {
 	if rc.SandboxAPIInUse() {
 		result, err := sandboxGet(rc, "provision")
 		if err != nil {
-			log.Printf("runProvision: sandbox get error for subject=%s: %v", rc.SubjectName, err)
+			slog.Error("runProvision: sandbox get error", "subject", rc.SubjectName, "error", err)
 			return handleProvisionError(rc)
 		}
 		switch result.Status {
@@ -90,7 +90,7 @@ func runProvision(rc *RunContext) error {
 	if !rc.DeployerDisabled("provision") {
 		// Launch Tower job for provisioning.
 		if err := launchTowerJob(rc, "provision", "provisioning", nil, dynamicJobVars); err != nil {
-			log.Printf("runProvision: tower launch failed for subject=%s: %v", rc.SubjectName, err)
+			slog.Error("runProvision: tower launch failed", "subject", rc.SubjectName, "error", err)
 			return handleProvisionError(rc)
 		}
 		return rc.ContinueAction("5m")
@@ -320,20 +320,20 @@ func checkProvisionQueue(rc *RunContext) error {
 
 	accessToken, err := sandboxLogin(rc)
 	if err != nil {
-		log.Printf("checkProvisionQueue: login failed for subject=%s: %v", rc.SubjectName, err)
+		slog.Error("checkProvisionQueue: login failed", "subject", rc.SubjectName, "error", err)
 		return handleProvisionError(rc)
 	}
 
 	client := getSandboxClient(rc)
 	placement, statusCode, err := client.GetPlacement(accessToken, uuid)
 	if err != nil {
-		log.Printf("checkProvisionQueue: get placement failed for subject=%s: %v", rc.SubjectName, err)
+		slog.Error("checkProvisionQueue: get placement failed", "subject", rc.SubjectName, "error", err)
 		return handleProvisionError(rc)
 	}
 
 	// 404 or error status -> provision error.
 	if statusCode == http.StatusNotFound {
-		log.Printf("checkProvisionQueue: placement not found for subject=%s", rc.SubjectName)
+		slog.Warn("checkProvisionQueue: placement not found", "subject", rc.SubjectName)
 		return handleProvisionError(rc)
 	}
 
@@ -341,7 +341,7 @@ func checkProvisionQueue(rc *RunContext) error {
 
 	switch placementStatus {
 	case "error":
-		log.Printf("checkProvisionQueue: placement error for subject=%s", rc.SubjectName)
+		slog.Error("checkProvisionQueue: placement error", "subject", rc.SubjectName)
 		return handleProvisionError(rc)
 
 	case "queued":

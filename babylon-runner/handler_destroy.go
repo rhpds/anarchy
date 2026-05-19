@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 )
 
 // handleDestroy routes a destroy action based on the current state.
@@ -37,9 +37,9 @@ func handleDestroy(rc *RunContext) error {
 			"destroy-canceled": true,
 		}
 		if errorStates[currentState] || rc.DeployerDisabled("destroy") {
-			log.Printf("handleDestroy: destroy catch-all triggered for subject=%s state=%s", rc.SubjectName, currentState)
+			slog.Info("handleDestroy: destroy catch-all triggered", "subject", rc.SubjectName, "state", currentState)
 			if err := sandboxCleanup(rc); err != nil {
-				log.Printf("handleDestroy: sandbox cleanup error for subject=%s: %v", rc.SubjectName, err)
+				slog.Error("handleDestroy: sandbox cleanup error", "subject", rc.SubjectName, "error", err)
 			}
 			rc.DeleteSubject(true)
 			rc.FinishAction("successful")
@@ -67,10 +67,10 @@ func runDestroy(rc *RunContext) error {
 	if rc.SandboxAPIInUse() {
 		result, err := sandboxGet(rc, "destroy")
 		if err != nil {
-			log.Printf("runDestroy: sandbox get error for subject=%s: %v", rc.SubjectName, err)
+			slog.Error("runDestroy: sandbox get error", "subject", rc.SubjectName, "error", err)
 		} else if result != nil {
 			if result.Status == "error" {
-				log.Printf("runDestroy: sandbox placement in error state for subject=%s", rc.SubjectName)
+				slog.Error("runDestroy: sandbox placement in error state", "subject", rc.SubjectName)
 			}
 			dynamicJobVars = result.DynamicVars
 		}
@@ -81,7 +81,7 @@ func runDestroy(rc *RunContext) error {
 
 	// Launch Tower job for destroy.
 	if err := launchTowerJob(rc, "destroy", "destroying", nil, dynamicJobVars); err != nil {
-		log.Printf("runDestroy: tower launch failed for subject=%s: %v", rc.SubjectName, err)
+		slog.Error("runDestroy: tower launch failed", "subject", rc.SubjectName, "error", err)
 		return err
 	}
 
@@ -93,7 +93,7 @@ func handleDestroyComplete(rc *RunContext) error {
 	// Sandbox API cleanup: release placement.
 	if rc.SandboxAPIInUse() {
 		if err := sandboxCleanup(rc); err != nil {
-			log.Printf("handleDestroyComplete: sandbox cleanup error for subject=%s: %v", rc.SubjectName, err)
+			slog.Error("handleDestroyComplete: sandbox cleanup error", "subject", rc.SubjectName, "error", err)
 		}
 	}
 

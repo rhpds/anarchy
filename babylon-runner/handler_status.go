@@ -1,14 +1,14 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 )
 
 // handleStatus routes a status action based on check_status_state.
 func handleStatus(rc *RunContext) error {
 	subjectVars := getNestedMap(rc.Payload.Subject, "spec", "vars")
 	if subjectVars == nil {
-		log.Printf("handleStatus: no subject vars for subject=%s", rc.SubjectName)
+		slog.Warn("handleStatus: no subject vars", "subject", rc.SubjectName)
 		return nil
 	}
 
@@ -54,7 +54,7 @@ func runStatus(rc *RunContext) error {
 		if rc.SandboxAPIInUse() {
 			result, err := sandboxGet(rc, "status")
 			if err != nil {
-				log.Printf("runStatus: sandbox get error for subject=%s: %v", rc.SubjectName, err)
+				slog.Error("runStatus: sandbox get error", "subject", rc.SubjectName, "error", err)
 			} else if result != nil {
 				dynamicJobVars = result.DynamicVars
 			}
@@ -66,7 +66,7 @@ func runStatus(rc *RunContext) error {
 			"check_status_state": "running",
 		}
 		if err := launchTowerJob(rc, "status", "", extraSpecVars, dynamicJobVars); err != nil {
-			log.Printf("runStatus: tower launch failed for subject=%s: %v", rc.SubjectName, err)
+			slog.Error("runStatus: tower launch failed", "subject", rc.SubjectName, "error", err)
 			return err
 		}
 		return rc.ContinueAction("5m")

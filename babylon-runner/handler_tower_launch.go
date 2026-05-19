@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 )
 
@@ -247,14 +247,14 @@ func launchTowerJob(rc *RunContext, action, newState string, extraSpecVars, dyna
 		Timeout:       timeout,
 	}
 
-	log.Printf("launching tower job action=%s subject=%s playbook=%s", action, rc.SubjectName, playbook)
+	slog.Info("launching tower job", "action", action, "subject", rc.SubjectName, "playbook", playbook)
 
 	jobID, err := tc.LaunchJob(config)
 	if err != nil {
 		return fmt.Errorf("launch tower job: %w", err)
 	}
 
-	log.Printf("tower job %d launched action=%s subject=%s", jobID, action, rc.SubjectName)
+	slog.Info("tower job launched", "jobID", jobID, "action", action, "subject", rc.SubjectName)
 
 	// Build the subject update patch.
 	patchBody := PatchBody{
@@ -316,27 +316,27 @@ func cancelTowerJob(rc *RunContext, action string) {
 	// Use towerHost from the job status to connect to the correct controller.
 	towerHost, _ := jobInfo["towerHost"].(string)
 	if towerHost == "" {
-		log.Printf("cancelTowerJob: no towerHost in job status for action=%s", action)
+		slog.Warn("cancelTowerJob: no towerHost in job status", "action", action)
 		return
 	}
 
 	tc, err := getTowerClientForHost(rc, towerHost)
 	if err != nil {
-		log.Printf("cancelTowerJob: cannot get tower client for host=%s: %v", towerHost, err)
+		slog.Error("cancelTowerJob: cannot get tower client", "host", towerHost, "error", err)
 		return
 	}
 
 	token, tokenID, err := tc.CreateOAuthToken()
 	if err != nil {
-		log.Printf("cancelTowerJob: cannot create oauth token: %v", err)
+		slog.Error("cancelTowerJob: cannot create oauth token", "error", err)
 		return
 	}
 	defer func() { _ = tc.DeleteOAuthToken(tokenID) }()
 
 	if err := tc.CancelJob(token, int(jobIDFloat)); err != nil {
-		log.Printf("cancelTowerJob: failed to cancel job %d: %v", int(jobIDFloat), err)
+		slog.Error("cancelTowerJob: failed to cancel job", "job", int(jobIDFloat), "error", err)
 	} else {
-		log.Printf("cancelTowerJob: canceled job %d for action=%s", int(jobIDFloat), action)
+		slog.Info("cancelTowerJob: canceled job", "job", int(jobIDFloat), "action", action)
 	}
 }
 

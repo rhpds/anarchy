@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 )
 
 // handleStart routes a start action based on the current state.
@@ -37,7 +37,7 @@ func runStart(rc *RunContext) error {
 	// Sandbox API start if enabled.
 	if rc.SandboxAPIInUse() && sandboxActionEnabled(rc, "start") {
 		if err := sandboxStart(rc); err != nil {
-			log.Printf("runStart: sandbox start error for subject=%s: %v", rc.SubjectName, err)
+			slog.Error("runStart: sandbox start error", "subject", rc.SubjectName, "error", err)
 		}
 		// If deployer disabled for start: mark started immediately.
 		if rc.DeployerDisabled("start") {
@@ -77,13 +77,13 @@ func runStart(rc *RunContext) error {
 		if rc.SandboxAPIInUse() {
 			result, err := sandboxGet(rc, "start")
 			if err != nil {
-				log.Printf("runStart: sandbox get error for subject=%s: %v", rc.SubjectName, err)
+				slog.Error("runStart: sandbox get error", "subject", rc.SubjectName, "error", err)
 			} else if result != nil {
 				dynamicJobVars = result.DynamicVars
 			}
 		}
 		if err := launchTowerJob(rc, "start", "starting", nil, dynamicJobVars); err != nil {
-			log.Printf("runStart: tower launch failed for subject=%s: %v", rc.SubjectName, err)
+			slog.Error("runStart: tower launch failed", "subject", rc.SubjectName, "error", err)
 			return err
 		}
 		return rc.ContinueAction("5m")

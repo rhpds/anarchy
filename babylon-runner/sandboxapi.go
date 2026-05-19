@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 )
@@ -45,7 +45,7 @@ func (s *SandboxAPIClient) Login(loginToken string) (string, error) {
 	var lastErr error
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if attempt > 0 {
-			log.Printf("retrying POST %s in %v (attempt %d/%d)", url, retryDelay, attempt+1, maxAttempts)
+			slog.Warn("retrying POST", "url", url, "delay", retryDelay, "attempt", attempt+1, "maxAttempts", maxAttempts)
 			time.Sleep(retryDelay)
 		}
 
@@ -252,7 +252,7 @@ func (s *SandboxAPIClient) doPlacementAction(accessToken, url string) (map[strin
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if attempt > 0 {
 			delay := retryDelays[attempt-1]
-			log.Printf("retrying PUT %s in %v (attempt %d/%d)", url, delay, attempt+1, maxAttempts)
+			slog.Warn("retrying PUT", "url", url, "delay", delay, "attempt", attempt+1, "maxAttempts", maxAttempts)
 			time.Sleep(delay)
 		}
 

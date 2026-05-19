@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 )
@@ -54,7 +54,7 @@ func (a *AnarchyClient) doWithRetry(method, url string, body interface{}) error 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if attempt > 0 {
 			delay := retryDelays[attempt-1]
-			log.Printf("retrying %s %s in %v (attempt %d/%d)", method, url, delay, attempt+1, maxAttempts)
+			slog.Warn("retrying request", "method", method, "url", url, "delay", delay, "attempt", attempt+1, "maxAttempts", maxAttempts)
 			time.Sleep(delay)
 		}
 

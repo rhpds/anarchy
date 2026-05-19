@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 )
 
 // handleStop routes a stop action based on the current state.
@@ -40,13 +40,13 @@ func runStop(rc *RunContext) error {
 		if rc.SandboxAPIInUse() {
 			result, err := sandboxGet(rc, "stop")
 			if err != nil {
-				log.Printf("runStop: sandbox get error for subject=%s: %v", rc.SubjectName, err)
+				slog.Error("runStop: sandbox get error", "subject", rc.SubjectName, "error", err)
 			} else if result != nil {
 				dynamicJobVars = result.DynamicVars
 			}
 		}
 		if err := launchTowerJob(rc, "stop", "stopping", nil, dynamicJobVars); err != nil {
-			log.Printf("runStop: tower launch failed for subject=%s: %v", rc.SubjectName, err)
+			slog.Error("runStop: tower launch failed", "subject", rc.SubjectName, "error", err)
 			return err
 		}
 		return rc.ContinueAction("5m")
@@ -55,7 +55,7 @@ func runStop(rc *RunContext) error {
 	// Deployer disabled and sandbox API in use: perform sandbox API stop.
 	if rc.SandboxAPIInUse() && sandboxActionEnabled(rc, "stop") {
 		if err := sandboxStop(rc); err != nil {
-			log.Printf("runStop: sandbox stop error for subject=%s: %v", rc.SubjectName, err)
+			slog.Error("runStop: sandbox stop error", "subject", rc.SubjectName, "error", err)
 		}
 		ts := nowUTC()
 		if err := rc.SubjectUpdate(SubjectPatch{
@@ -117,7 +117,7 @@ func handleStopComplete(rc *RunContext) error {
 	// Sandbox API stop if enabled.
 	if rc.SandboxAPIInUse() && sandboxActionEnabled(rc, "stop") {
 		if err := sandboxStop(rc); err != nil {
-			log.Printf("handleStopComplete: sandbox stop error for subject=%s: %v", rc.SubjectName, err)
+			slog.Error("handleStopComplete: sandbox stop error", "subject", rc.SubjectName, "error", err)
 		}
 	}
 

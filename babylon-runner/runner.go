@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -40,13 +40,13 @@ type RunContext struct {
 func (rc *RunContext) FinishAction(state string) {
 	rc.finished = true
 	rc.finishActionDirective = &FinishActionDirective{State: state}
-	log.Printf("action %s finished with state %q", rc.ActionName, state)
+	slog.Info("action finished", "action", rc.ActionName, "state", state)
 }
 
 // DeleteSubject marks the subject for deletion by the operator.
 func (rc *RunContext) DeleteSubject(removeFinalizers bool) {
 	rc.deleteSubjectDirective = &DeleteSubjectDirective{RemoveFinalizers: removeFinalizers}
-	log.Printf("subject %s marked for deletion (removeFinalizers=%v)", rc.SubjectName, removeFinalizers)
+	slog.Info("subject marked for deletion", "subject", rc.SubjectName, "removeFinalizers", removeFinalizers)
 }
 
 // ContinueAction schedules the current action to run again after the
@@ -226,21 +226,21 @@ func (r *Runner) Run() {
 	ticker := time.NewTicker(time.Duration(r.cfg.PollingInterval) * time.Second)
 	defer ticker.Stop()
 
-	log.Println("runner polling loop started")
+	slog.Info("runner polling loop started")
 
 	// Run an initial poll immediately before waiting for the ticker.
 	if err := r.pollOnce(); err != nil {
-		log.Printf("poll error: %v", err)
+		slog.Error("poll error", "error", err)
 	}
 
 	for {
 		select {
 		case sig := <-sigCh:
-			log.Printf("received signal %v, shutting down", sig)
+			slog.Info("received signal, shutting down", "signal", sig)
 			return
 		case <-ticker.C:
 			if err := r.pollOnce(); err != nil {
-				log.Printf("poll error: %v", err)
+				slog.Error("poll error", "error", err)
 			}
 		}
 	}
@@ -261,8 +261,9 @@ func (r *Runner) pollOnce() error {
 	runName := getNestedString(payload.Run, "metadata", "name")
 	actionName := getNestedString(payload.Action, "spec", "action")
 
-	log.Printf("received run=%s subject=%s handler=%s/%s action=%s",
-		runName, subjectName, payload.Handler.Type, payload.Handler.Name, actionName)
+	slog.Info("received run",
+		"run", runName, "subject", subjectName, "handlerType", payload.Handler.Type,
+		"handlerName", payload.Handler.Name, "action", actionName)
 
 	rc := &RunContext{
 		Payload:     *payload,
@@ -280,7 +281,7 @@ func (r *Runner) pollOnce() error {
 	}
 
 	if err := dispatch(rc, r.handlers); err != nil {
-		log.Printf("handler error for run=%s: %v", runName, err)
+		slog.Error("handler error", "run", runName, "error", err)
 		result.Result.RC = 1
 		result.Result.Status = "failed"
 		result.Result.StatusMessage = err.Error()
@@ -359,7 +360,7 @@ func (r *Runner) postResult(runName string, result RunResult) error {
 			if delay > 60*time.Second {
 				delay = 60 * time.Second
 			}
-			log.Printf("retrying POST %s in %v (attempt %d/%d)", url, delay, attempt+1, maxAttempts)
+			slog.Warn("retrying POST", "url", url, "delay", delay, "attempt", attempt+1, "maxAttempts", maxAttempts)
 			time.Sleep(delay)
 		}
 
@@ -372,7 +373,7 @@ func (r *Runner) postResult(runName string, result RunResult) error {
 
 		resp, err := r.client.Do(req)
 		if err != nil {
-			log.Printf("POST %s attempt %d failed: %v", url, attempt+1, err)
+			slog.Error("POST attempt failed", "url", url, "attempt", attempt+1, "error", err)
 			continue
 		}
 		resp.Body.Close()
@@ -380,7 +381,7 @@ func (r *Runner) postResult(runName string, result RunResult) error {
 		if resp.StatusCode == http.StatusOK {
 			return nil
 		}
-		log.Printf("POST %s attempt %d: status %d", url, attempt+1, resp.StatusCode)
+		slog.Warn("POST unexpected status", "url", url, "attempt", attempt+1, "status", resp.StatusCode)
 	}
 
 	return fmt.Errorf("POST %s: all %d attempts failed", url, maxAttempts)

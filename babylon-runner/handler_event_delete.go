@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 )
 
 // handleEventDelete handles the "delete" subject event. It decides whether
@@ -85,7 +85,7 @@ func handleEventDeleteWithoutDestroy(rc *RunContext) error {
 	// Sandbox cleanup: release placement if catch_all is enabled.
 	if rc.SandboxAPIInUse() && sandboxDestroyCatchAll(rc) && rc.UUID() != "" {
 		if err := sandboxCleanup(rc); err != nil {
-			log.Printf("handleEventDeleteWithoutDestroy: sandbox cleanup error: %v", err)
+			slog.Error("handleEventDeleteWithoutDestroy: sandbox cleanup error", "error", err)
 		}
 	}
 
