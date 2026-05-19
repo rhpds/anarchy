@@ -467,3 +467,124 @@ func TestHandleDestroyComplete(t *testing.T) {
 		t.Error("expected FinishAction to be called")
 	}
 }
+
+// --- checkDeployerJob tests ---
+
+func TestCheckDeployerJobSuccessful(t *testing.T) {
+	// Create a mock Tower server that returns a successful job
+	towerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "POST" && r.URL.Path == "/api/v2/tokens/":
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(1), "token": "test-token"})
+		case r.Method == "DELETE":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			// GET job status
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(42), "status": "successful"})
+		}
+	}))
+	defer towerServer.Close()
+
+	anarchyServer, calls := newTestAnarchyServer(t)
+	defer anarchyServer.Close()
+
+	rc := newTestRunContext(t, anarchyServer)
+	rc.ActionName = "provision"
+	rc.TowerBaseURL = towerServer.URL
+	setNested(rc.Payload.Subject, map[string]interface{}{
+		"provision": map[string]interface{}{
+			"deployerJob": float64(42),
+			"towerHost":   "tower.example.com",
+		},
+	}, "status", "towerJobs")
+
+	err := checkDeployerJob(rc, "provision")
+	if err != nil {
+		t.Fatalf("checkDeployerJob error: %v", err)
+	}
+
+	// Should have called handleProvisionComplete → subject update
+	if len(*calls) < 1 {
+		t.Fatalf("expected at least 1 anarchy API call, got %d", len(*calls))
+	}
+	if !rc.finished {
+		t.Error("expected FinishAction to have been called")
+	}
+}
+
+func TestCheckDeployerJobFailed(t *testing.T) {
+	towerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "POST" && r.URL.Path == "/api/v2/tokens/":
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(1), "token": "test-token"})
+		case r.Method == "DELETE":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(42), "status": "failed"})
+		}
+	}))
+	defer towerServer.Close()
+
+	anarchyServer, calls := newTestAnarchyServer(t)
+	defer anarchyServer.Close()
+
+	rc := newTestRunContext(t, anarchyServer)
+	rc.ActionName = "provision"
+	rc.TowerBaseURL = towerServer.URL
+	setNested(rc.Payload.Subject, map[string]interface{}{
+		"provision": map[string]interface{}{
+			"deployerJob": float64(42),
+			"towerHost":   "tower.example.com",
+		},
+	}, "status", "towerJobs")
+
+	err := checkDeployerJob(rc, "provision")
+	if err != nil {
+		t.Fatalf("checkDeployerJob error: %v", err)
+	}
+
+	// Should have called handleProvisionFailed → subject update
+	if len(*calls) < 1 {
+		t.Fatalf("expected at least 1 call, got %d", len(*calls))
+	}
+	if !rc.finished {
+		t.Error("expected FinishAction to have been called")
+	}
+}
+
+func TestCheckDeployerJobStillRunning(t *testing.T) {
+	towerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "POST" && r.URL.Path == "/api/v2/tokens/":
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(1), "token": "test-token"})
+		case r.Method == "DELETE":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(42), "status": "running"})
+		}
+	}))
+	defer towerServer.Close()
+
+	anarchyServer, _ := newTestAnarchyServer(t)
+	defer anarchyServer.Close()
+
+	rc := newTestRunContext(t, anarchyServer)
+	rc.ActionName = "provision"
+	rc.TowerBaseURL = towerServer.URL
+	setNested(rc.Payload.Subject, map[string]interface{}{
+		"provision": map[string]interface{}{
+			"deployerJob": float64(42),
+			"towerHost":   "tower.example.com",
+		},
+	}, "status", "towerJobs")
+
+	err := checkDeployerJob(rc, "provision")
+	if err != nil {
+		t.Fatalf("checkDeployerJob error: %v", err)
+	}
+
+	// Should NOT have called FinishAction (job still running)
+	if rc.finished {
+		t.Error("expected FinishAction NOT to be called while job is running")
+	}
+}

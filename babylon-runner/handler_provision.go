@@ -233,10 +233,3 @@ func checkProvisionQueue(rc *RunContext) error {
 	log.Printf("checkProvisionQueue: waiting for provision queue for subject=%s (TODO)", rc.SubjectName)
 	return rc.ContinueAction("30s")
 }
-
-// checkDeployerJob checks the status of a deployer (Tower) job.
-// Stub — will be replaced by the full implementation in handler_check_deployer.go (Task 11).
-func checkDeployerJob(rc *RunContext, action string) error {
-	log.Printf("checkDeployerJob: not yet implemented for action=%s subject=%s", action, rc.SubjectName)
-	return rc.ContinueAction("5m")
-}
