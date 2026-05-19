@@ -107,7 +107,7 @@ func configureSandboxRC(t *testing.T, rc *RunContext, sandboxURL string) {
 	t.Helper()
 	rc.SandboxBaseURL = sandboxURL
 	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "aws_sandboxed")
-	setNested(rc.Payload.Governor, "test-login-token", "spec", "vars", "__meta__", "sandbox_api_login_token")
+	setNested(rc.Payload.Governor, "test-login-token", "spec", "vars", "sandbox_api", "sandbox_api_login_token")
 	setNested(rc.Payload.Subject, "test-uuid", "spec", "vars", "job_vars", "uuid")
 	setNested(rc.Payload.Subject, "test-guid", "spec", "vars", "job_vars", "guid")
 }

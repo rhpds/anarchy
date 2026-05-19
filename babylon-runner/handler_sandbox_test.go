@@ -25,7 +25,7 @@ func newSimpleSandboxServer(t *testing.T, handlers map[string]http.HandlerFunc) 
 // withSandboxEnabled configures a RunContext for sandbox API use.
 func withSandboxEnabled(rc *RunContext, sandboxServer *httptest.Server, uuid string) {
 	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "aws_sandboxed")
-	setNested(rc.Payload.Governor, "test-login-token", "spec", "vars", "__meta__", "sandbox_api_login_token")
+	setNested(rc.Payload.Governor, "test-login-token", "spec", "vars", "sandbox_api", "sandbox_api_login_token")
 	setNested(rc.Payload.Subject, uuid, "spec", "vars", "job_vars", "uuid")
 	setNested(rc.Payload.Subject, "test-guid-123", "spec", "vars", "job_vars", "guid")
 	rc.SandboxBaseURL = sandboxServer.URL
@@ -47,9 +47,9 @@ func TestGetSandboxClient(t *testing.T) {
 			wantBaseURL: "http://test-sandbox.local:8080",
 		},
 		{
-			name: "with meta sandbox_api_url set",
+			name: "with sandbox_api varSecret url set",
 			setupRC: func(rc *RunContext) {
-				setNested(rc.Payload.Governor, "http://meta-sandbox.local:9090", "spec", "vars", "__meta__", "sandbox_api_url")
+				setNested(rc.Payload.Governor, "http://meta-sandbox.local:9090", "spec", "vars", "sandbox_api", "sandbox_api_url")
 			},
 			wantBaseURL: "http://meta-sandbox.local:9090",
 		},
@@ -62,7 +62,7 @@ func TestGetSandboxClient(t *testing.T) {
 			name: "SandboxBaseURL overrides meta",
 			setupRC: func(rc *RunContext) {
 				rc.SandboxBaseURL = "http://test-override.local"
-				setNested(rc.Payload.Governor, "http://meta-sandbox.local:9090", "spec", "vars", "__meta__", "sandbox_api_url")
+				setNested(rc.Payload.Governor, "http://meta-sandbox.local:9090", "spec", "vars", "sandbox_api", "sandbox_api_url")
 			},
 			wantBaseURL: "http://test-override.local",
 		},
@@ -95,7 +95,7 @@ func TestSandboxLoginToken(t *testing.T) {
 		{
 			name: "token present in meta",
 			setupRC: func(rc *RunContext) {
-				setNested(rc.Payload.Governor, "my-secret-token", "spec", "vars", "__meta__", "sandbox_api_login_token")
+				setNested(rc.Payload.Governor, "my-secret-token", "spec", "vars", "sandbox_api", "sandbox_api_login_token")
 			},
 			wantToken: "my-secret-token",
 		},
@@ -151,7 +151,7 @@ func TestSandboxLogin(t *testing.T) {
 		defer anarchyServer.Close()
 
 		rc := newTestRunContext(t, anarchyServer)
-		setNested(rc.Payload.Governor, "test-login-token", "spec", "vars", "__meta__", "sandbox_api_login_token")
+		setNested(rc.Payload.Governor, "test-login-token", "spec", "vars", "sandbox_api", "sandbox_api_login_token")
 		rc.SandboxBaseURL = sandboxServer.URL
 
 		accessToken, err := sandboxLogin(rc)
@@ -174,7 +174,7 @@ func TestSandboxLogin(t *testing.T) {
 			t.Fatal("expected error when no login token, got nil")
 		}
 		if !strings.Contains(err.Error(), "no sandbox_api_login_token") {
-			t.Errorf("error = %v, want 'no sandbox_api_login_token'", err)
+			t.Errorf("error = %v, want error about sandbox_api_login_token", err)
 		}
 	})
 
@@ -190,7 +190,7 @@ func TestSandboxLogin(t *testing.T) {
 		defer anarchyServer.Close()
 
 		rc := newTestRunContext(t, anarchyServer)
-		setNested(rc.Payload.Governor, "test-login-token", "spec", "vars", "__meta__", "sandbox_api_login_token")
+		setNested(rc.Payload.Governor, "test-login-token", "spec", "vars", "sandbox_api", "sandbox_api_login_token")
 		rc.SandboxBaseURL = sandboxServer.URL
 
 		_, err := sandboxLogin(rc)

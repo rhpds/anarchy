@@ -15,16 +15,25 @@ type SandboxResult struct {
 	Labels      map[string]string      // extracted labels
 }
 
+// sandboxAPIVars returns the sandbox_api varSecret data from
+// governor.spec.vars.sandbox_api. This is injected by the Anarchy operator
+// from a K8s Secret configured in the governor's varSecrets.
+func sandboxAPIVars(rc *RunContext) map[string]interface{} {
+	return getNestedMap(rc.Payload.Governor, "spec", "vars", "sandbox_api")
+}
+
 // getSandboxClient creates a SandboxAPIClient, using rc.SandboxBaseURL for tests.
 // When SandboxBaseURL is set (test mode), retries and delays are minimized.
+// URL source: governor.spec.vars.sandbox_api.sandbox_api_url (from varSecret),
+// matching the Ansible default: {{ sandbox_api.sandbox_api_url | default(...) }}.
 func getSandboxClient(rc *RunContext) *SandboxAPIClient {
 	baseURL := DefaultSandboxAPIURL
 	if rc.SandboxBaseURL != "" {
 		baseURL = rc.SandboxBaseURL
 	} else {
-		meta := rc.Meta()
-		if meta != nil {
-			if u, ok := meta["sandbox_api_url"].(string); ok && u != "" {
+		sbVars := sandboxAPIVars(rc)
+		if sbVars != nil {
+			if u, ok := sbVars["sandbox_api_url"].(string); ok && u != "" {
 				baseURL = u
 			}
 		}
@@ -38,13 +47,15 @@ func getSandboxClient(rc *RunContext) *SandboxAPIClient {
 	return client
 }
 
-// sandboxLoginToken returns the sandbox API login token from __meta__.
+// sandboxLoginToken returns the sandbox API login token from
+// governor.spec.vars.sandbox_api.sandbox_api_login_token (varSecret).
+// Matches the Ansible default: {{ sandbox_api.sandbox_api_login_token }}.
 func sandboxLoginToken(rc *RunContext) string {
-	meta := rc.Meta()
-	if meta == nil {
+	sbVars := sandboxAPIVars(rc)
+	if sbVars == nil {
 		return ""
 	}
-	token, _ := meta["sandbox_api_login_token"].(string)
+	token, _ := sbVars["sandbox_api_login_token"].(string)
 	return token
 }
 
@@ -52,7 +63,7 @@ func sandboxLoginToken(rc *RunContext) string {
 func sandboxLogin(rc *RunContext) (string, error) {
 	token := sandboxLoginToken(rc)
 	if token == "" {
-		return "", fmt.Errorf("no sandbox_api_login_token in __meta__")
+		return "", fmt.Errorf("no sandbox_api_login_token in governor sandbox_api secret")
 	}
 	client := getSandboxClient(rc)
 	accessToken, err := client.Login(token)
