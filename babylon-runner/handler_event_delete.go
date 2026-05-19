@@ -8,6 +8,9 @@ import (
 // to schedule a destroy action or finish immediately depending on whether
 // a provision tower job exists and a destroy action is available.
 func handleEventDelete(rc *RunContext) error {
+	// Cancel all incomplete tower jobs before proceeding.
+	cancelAllIncompleteTowerJobs(rc)
+
 	// Check if a provision tower job exists.
 	hasProvisionJob := false
 	towerJobs := rc.StatusTowerJobs()
@@ -62,8 +65,11 @@ func handleEventDeleteWithDestroy(rc *RunContext) error {
 // handleEventDeleteWithoutDestroy marks the subject as destroyed and
 // finishes the action immediately.
 func handleEventDeleteWithoutDestroy(rc *RunContext) error {
+	// Sandbox cleanup: release placement.
 	if rc.SandboxAPIInUse() && rc.UUID() != "" {
-		log.Printf("sandbox cleanup needed for uuid=%s (TODO)", rc.UUID())
+		if err := sandboxCleanup(rc); err != nil {
+			log.Printf("handleEventDeleteWithoutDestroy: sandbox cleanup error: %v", err)
+		}
 	}
 
 	err := rc.SubjectUpdate(SubjectPatch{
@@ -80,6 +86,7 @@ func handleEventDeleteWithoutDestroy(rc *RunContext) error {
 		return err
 	}
 
+	rc.DeleteSubject(true)
 	rc.FinishAction("successful")
 	return nil
 }

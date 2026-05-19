@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"net/http"
 )
 
 // checkDeployerJob polls Tower job status and routes to completion/error handlers.
@@ -16,7 +15,7 @@ func checkDeployerJob(rc *RunContext, action string) error {
 		return rc.ContinueAction("5m")
 	}
 
-	// Extract deployerJob (float64 → int) and towerHost (string)
+	// Extract deployerJob (float64 → int).
 	deployerJobFloat, ok := actionJob["deployerJob"].(float64)
 	if !ok {
 		log.Printf("checkDeployerJob: deployerJob not found or not a number for action=%s subject=%s", action, rc.SubjectName)
@@ -24,23 +23,11 @@ func checkDeployerJob(rc *RunContext, action string) error {
 	}
 	deployerJob := int(deployerJobFloat)
 
-	towerHost, ok := actionJob["towerHost"].(string)
-	if !ok {
-		log.Printf("checkDeployerJob: towerHost not found or not a string for action=%s subject=%s", action, rc.SubjectName)
+	// Create TowerClient using shared helper.
+	tc, _, err := getTowerClientForAction(rc)
+	if err != nil {
+		log.Printf("checkDeployerJob: failed to get tower client for action=%s subject=%s: %v", action, rc.SubjectName, err)
 		return rc.ContinueAction("5m")
-	}
-
-	// Create TowerClient
-	var tc *TowerClient
-	if rc.TowerBaseURL != "" {
-		// Testing override
-		tc = &TowerClient{
-			baseURL: rc.TowerBaseURL,
-			client:  &http.Client{},
-		}
-	} else {
-		// TODO: extract real credentials from secret
-		tc = NewTowerClient(towerHost, "", "")
 	}
 
 	// Create OAuth token
@@ -137,8 +124,8 @@ func handleDeployerJobFailure(rc *RunContext, action, status string) error {
 func handleDeployerJobSuccess(rc *RunContext, action string, jobStatus map[string]interface{}) error {
 	switch action {
 	case "provision":
-		// TODO: extract provision data from job
-		return handleProvisionComplete(rc, nil, nil, nil)
+		data, messageBody, messages := extractProvisionData(jobStatus)
+		return handleProvisionComplete(rc, data, messageBody, messages)
 	case "destroy":
 		return handleDestroyComplete(rc)
 	case "start":

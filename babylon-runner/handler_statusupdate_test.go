@@ -11,7 +11,11 @@ func TestHandleStatusPending(t *testing.T) {
 	server, calls := newTestAnarchyServer(t)
 	defer server.Close()
 
+	towerServer := newTestTowerServer(t)
+	defer towerServer.Close()
+
 	rc := newTestRunContext(t, server)
+	withTowerServer(rc, towerServer)
 
 	// Set action name.
 	rc.ActionName = "status"
@@ -23,8 +27,9 @@ func TestHandleStatusPending(t *testing.T) {
 		t.Fatalf("handleStatus returned error: %v", err)
 	}
 
-	if len(*calls) != 2 {
-		t.Fatalf("expected 2 calls, got %d", len(*calls))
+	// Should have: set startTimestamp, launch tower job (patch with towerJobs), continue action.
+	if len(*calls) < 3 {
+		t.Fatalf("expected at least 3 calls, got %d", len(*calls))
 	}
 
 	// First call: PATCH to set startTimestamp.
@@ -49,19 +54,19 @@ func TestHandleStatusPending(t *testing.T) {
 		t.Errorf("skip_update_processing = %v, want true", patch["skip_update_processing"])
 	}
 
-	// Second call: POST to continue action.
-	c1 := (*calls)[1]
-	if c1.Method != http.MethodPost {
-		t.Errorf("call[1] method = %s, want POST", c1.Method)
+	// Last call: POST to continue action.
+	lastCall := (*calls)[len(*calls)-1]
+	if lastCall.Method != http.MethodPost {
+		t.Errorf("last call method = %s, want POST", lastCall.Method)
 	}
-	if c1.Path != "/run/subject/test-subject/actions" {
-		t.Errorf("call[1] path = %s, want /run/subject/test-subject/actions", c1.Path)
+	if lastCall.Path != "/run/subject/test-subject/actions" {
+		t.Errorf("last call path = %s, want /run/subject/test-subject/actions", lastCall.Path)
 	}
-	if c1.Body["action"] != "status" {
-		t.Errorf("action = %v, want status", c1.Body["action"])
+	if lastCall.Body["action"] != "status" {
+		t.Errorf("action = %v, want status", lastCall.Body["action"])
 	}
-	if c1.Body["after"] != "5m" {
-		t.Errorf("after = %v, want 5m", c1.Body["after"])
+	if lastCall.Body["after"] != "5m" {
+		t.Errorf("after = %v, want 5m", lastCall.Body["after"])
 	}
 }
 
@@ -101,7 +106,11 @@ func TestHandleUpdateNotUpdating(t *testing.T) {
 	server, calls := newTestAnarchyServer(t)
 	defer server.Close()
 
+	towerServer := newTestTowerServer(t)
+	defer towerServer.Close()
+
 	rc := newTestRunContext(t, server)
+	withTowerServer(rc, towerServer)
 
 	// Set current_state to started (not updating).
 	setNested(rc.Payload.Subject, "started", "spec", "vars", "current_state")
@@ -113,20 +122,21 @@ func TestHandleUpdateNotUpdating(t *testing.T) {
 		t.Fatalf("handleUpdate returned error: %v", err)
 	}
 
-	if len(*calls) != 1 {
-		t.Fatalf("expected 1 call (ContinueAction), got %d", len(*calls))
+	// Should have: launch tower job (patch), continue action.
+	if len(*calls) < 2 {
+		t.Fatalf("expected at least 2 calls, got %d", len(*calls))
 	}
 
-	// runUpdate calls ContinueAction.
-	c0 := (*calls)[0]
-	if c0.Method != http.MethodPost {
-		t.Errorf("call[0] method = %s, want POST", c0.Method)
+	// Last call: POST to continue action.
+	lastCall := (*calls)[len(*calls)-1]
+	if lastCall.Method != http.MethodPost {
+		t.Errorf("last call method = %s, want POST", lastCall.Method)
 	}
-	if c0.Body["action"] != "update" {
-		t.Errorf("action = %v, want update", c0.Body["action"])
+	if lastCall.Body["action"] != "update" {
+		t.Errorf("action = %v, want update", lastCall.Body["action"])
 	}
-	if c0.Body["after"] != "5m" {
-		t.Errorf("after = %v, want 5m", c0.Body["after"])
+	if lastCall.Body["after"] != "5m" {
+		t.Errorf("after = %v, want 5m", lastCall.Body["after"])
 	}
 }
 

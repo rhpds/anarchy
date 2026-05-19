@@ -49,13 +49,22 @@ func runStatus(rc *RunContext) error {
 	}
 
 	if !rc.DeployerDisabled("status") {
-		// Sandbox API integration (TODO).
+		// Get sandbox vars for Tower job.
 		if rc.SandboxAPIInUse() {
-			log.Printf("runStatus: sandbox get needed for subject=%s (TODO)", rc.SubjectName)
+			if _, err := sandboxGet(rc, "status"); err != nil {
+				log.Printf("runStatus: sandbox get error for subject=%s: %v", rc.SubjectName, err)
+			}
 		}
 
-		// Tower job launch needed (TODO).
-		log.Printf("runStatus: tower job launch needed for subject=%s (TODO)", rc.SubjectName)
+		// Launch Tower job for status check. Status action does not
+		// transition current_state but sets check_status_state.
+		extraSpecVars := map[string]interface{}{
+			"check_status_state": "running",
+		}
+		if err := launchTowerJob(rc, "status", "", extraSpecVars); err != nil {
+			log.Printf("runStatus: tower launch failed for subject=%s: %v", rc.SubjectName, err)
+			return err
+		}
 		return rc.ContinueAction("5m")
 	}
 

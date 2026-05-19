@@ -34,18 +34,25 @@ func runStop(rc *RunContext) error {
 		return err
 	}
 
-	// If deployer not disabled: launch Tower job.
+	// If deployer not disabled: get sandbox vars and launch Tower job.
 	if !rc.DeployerDisabled("stop") {
 		if rc.SandboxAPIInUse() {
-			log.Printf("runStop: sandbox_get needed for subject=%s (TODO)", rc.SubjectName)
+			if _, err := sandboxGet(rc, "stop"); err != nil {
+				log.Printf("runStop: sandbox get error for subject=%s: %v", rc.SubjectName, err)
+			}
 		}
-		log.Printf("runStop: tower job launch needed for subject=%s (TODO)", rc.SubjectName)
+		if err := launchTowerJob(rc, "stop", "stopping", nil); err != nil {
+			log.Printf("runStop: tower launch failed for subject=%s: %v", rc.SubjectName, err)
+			return err
+		}
 		return rc.ContinueAction("5m")
 	}
 
 	// Deployer disabled and sandbox API in use: perform sandbox API stop.
 	if rc.SandboxAPIInUse() && sandboxActionEnabled(rc, "stop") {
-		log.Printf("runStop: sandbox_api_stop needed for subject=%s (TODO)", rc.SubjectName)
+		if err := sandboxStop(rc); err != nil {
+			log.Printf("runStop: sandbox stop error for subject=%s: %v", rc.SubjectName, err)
+		}
 		ts := nowUTC()
 		if err := rc.SubjectUpdate(SubjectPatch{
 			Patch: PatchBody{
@@ -105,7 +112,9 @@ func handleStopComplete(rc *RunContext) error {
 
 	// Sandbox API stop if enabled.
 	if rc.SandboxAPIInUse() && sandboxActionEnabled(rc, "stop") {
-		log.Printf("handleStopComplete: sandbox_api_stop needed for subject=%s (TODO)", rc.SubjectName)
+		if err := sandboxStop(rc); err != nil {
+			log.Printf("handleStopComplete: sandbox stop error for subject=%s: %v", rc.SubjectName, err)
+		}
 	}
 
 	// Update state to stopped.

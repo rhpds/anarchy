@@ -34,9 +34,11 @@ func runStart(rc *RunContext) error {
 		return err
 	}
 
-	// Sandbox API integration.
+	// Sandbox API start if enabled.
 	if rc.SandboxAPIInUse() && sandboxActionEnabled(rc, "start") {
-		log.Printf("runStart: sandbox_api_start needed for subject=%s (TODO)", rc.SubjectName)
+		if err := sandboxStart(rc); err != nil {
+			log.Printf("runStart: sandbox start error for subject=%s: %v", rc.SubjectName, err)
+		}
 		// If deployer disabled for start: mark started immediately.
 		if rc.DeployerDisabled("start") {
 			ts := nowUTC()
@@ -69,12 +71,17 @@ func runStart(rc *RunContext) error {
 		}
 	}
 
-	// If deployer not disabled: launch Tower job.
+	// If deployer not disabled: get sandbox vars and launch Tower job.
 	if !rc.DeployerDisabled("start") {
 		if rc.SandboxAPIInUse() {
-			log.Printf("runStart: sandbox_get needed for subject=%s (TODO)", rc.SubjectName)
+			if _, err := sandboxGet(rc, "start"); err != nil {
+				log.Printf("runStart: sandbox get error for subject=%s: %v", rc.SubjectName, err)
+			}
 		}
-		log.Printf("runStart: tower job launch needed for subject=%s (TODO)", rc.SubjectName)
+		if err := launchTowerJob(rc, "start", "starting", nil); err != nil {
+			log.Printf("runStart: tower launch failed for subject=%s: %v", rc.SubjectName, err)
+			return err
+		}
 		return rc.ContinueAction("5m")
 	}
 

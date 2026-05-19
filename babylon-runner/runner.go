@@ -27,15 +27,26 @@ type RunContext struct {
 
 	// TowerBaseURL allows tests to override the tower URL.
 	TowerBaseURL string
+	// SandboxBaseURL allows tests to override the sandbox API URL.
+	SandboxBaseURL string
 
-	finished bool
+	finished               bool
+	finishActionDirective  *FinishActionDirective
+	deleteSubjectDirective *DeleteSubjectDirective
 }
 
 // FinishAction marks the action as finished with the given state.
-// For now it only logs; it will be used when POST result supports finishAction.
+// The directive is included in the POST /run result for the operator to process.
 func (rc *RunContext) FinishAction(state string) {
 	rc.finished = true
+	rc.finishActionDirective = &FinishActionDirective{State: state}
 	log.Printf("action %s finished with state %q", rc.ActionName, state)
+}
+
+// DeleteSubject marks the subject for deletion by the operator.
+func (rc *RunContext) DeleteSubject(removeFinalizers bool) {
+	rc.deleteSubjectDirective = &DeleteSubjectDirective{RemoveFinalizers: removeFinalizers}
+	log.Printf("subject %s marked for deletion (removeFinalizers=%v)", rc.SubjectName, removeFinalizers)
 }
 
 // ContinueAction schedules the current action to run again after the
@@ -225,6 +236,10 @@ func (r *Runner) pollOnce() error {
 		result.Result.Status = "failed"
 		result.Result.StatusMessage = err.Error()
 	}
+
+	// Include handler directives in the result.
+	result.FinishAction = rc.finishActionDirective
+	result.DeleteSubject = rc.deleteSubjectDirective
 
 	if err := r.postResult(runName, result); err != nil {
 		return fmt.Errorf("postResult run=%s: %w", runName, err)

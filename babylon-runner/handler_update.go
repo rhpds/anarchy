@@ -17,12 +17,17 @@ func handleUpdate(rc *RunContext) error {
 
 // runUpdate initiates the update workflow.
 func runUpdate(rc *RunContext) error {
-	// Sandbox API integration (TODO).
+	// Get sandbox vars for Tower job.
 	if rc.SandboxAPIInUse() {
-		log.Printf("runUpdate: sandbox get needed for subject=%s (TODO)", rc.SubjectName)
+		if _, err := sandboxGet(rc, "update"); err != nil {
+			log.Printf("runUpdate: sandbox get error for subject=%s: %v", rc.SubjectName, err)
+		}
 	}
 
-	// Tower job launch needed (TODO).
-	log.Printf("runUpdate: tower job launch needed for subject=%s (TODO)", rc.SubjectName)
+	// Launch Tower job for update.
+	if err := launchTowerJob(rc, "update", "updating", nil); err != nil {
+		log.Printf("runUpdate: tower launch failed for subject=%s: %v", rc.SubjectName, err)
+		return err
+	}
 	return rc.ContinueAction("5m")
 }

@@ -47,7 +47,10 @@ func handleDestroy(rc *RunContext) error {
 			}
 			if errorStates[currentState] || rc.DeployerDisabled("destroy") {
 				log.Printf("handleDestroy: destroy catch-all triggered for subject=%s state=%s", rc.SubjectName, currentState)
-				log.Printf("handleDestroy: sandbox cleanup needed for subject=%s (TODO)", rc.SubjectName)
+				if err := sandboxCleanup(rc); err != nil {
+					log.Printf("handleDestroy: sandbox cleanup error for subject=%s: %v", rc.SubjectName, err)
+				}
+				rc.DeleteSubject(true)
 				rc.FinishAction("successful")
 				return nil
 			}
@@ -69,25 +72,36 @@ func handleDestroy(rc *RunContext) error {
 
 // runDestroy initiates the destroy workflow.
 func runDestroy(rc *RunContext) error {
-	// Sandbox API integration (TODO).
+	// Sandbox API integration: get placement for destroy vars.
 	if rc.SandboxAPIInUse() {
-		log.Printf("runDestroy: sandbox get needed for subject=%s (TODO)", rc.SubjectName)
+		result, err := sandboxGet(rc, "destroy")
+		if err != nil {
+			log.Printf("runDestroy: sandbox get error for subject=%s: %v", rc.SubjectName, err)
+		}
+		if result != nil && result.Status == "error" {
+			log.Printf("runDestroy: sandbox placement in error state for subject=%s", rc.SubjectName)
+		}
 	}
 
-	// Cancel running provision Tower job if exists (TODO).
-	log.Printf("runDestroy: cancel provision job needed for subject=%s (TODO)", rc.SubjectName)
+	// Cancel running provision Tower job if exists.
+	cancelTowerJob(rc, "provision")
 
-	// Tower job launch needed (TODO).
-	log.Printf("runDestroy: tower job launch needed for subject=%s (TODO)", rc.SubjectName)
+	// Launch Tower job for destroy.
+	if err := launchTowerJob(rc, "destroy", "destroying", nil); err != nil {
+		log.Printf("runDestroy: tower launch failed for subject=%s: %v", rc.SubjectName, err)
+		return err
+	}
 
 	return rc.ContinueAction("5m")
 }
 
 // handleDestroyComplete finalizes a successful destroy.
 func handleDestroyComplete(rc *RunContext) error {
-	// Sandbox API cleanup (TODO).
+	// Sandbox API cleanup: release placement.
 	if rc.SandboxAPIInUse() {
-		log.Printf("handleDestroyComplete: sandbox cleanup needed for subject=%s (TODO)", rc.SubjectName)
+		if err := sandboxCleanup(rc); err != nil {
+			log.Printf("handleDestroyComplete: sandbox cleanup error for subject=%s: %v", rc.SubjectName, err)
+		}
 	}
 
 	ts := nowUTC()
@@ -124,6 +138,7 @@ func handleDestroyComplete(rc *RunContext) error {
 		return err
 	}
 
+	rc.DeleteSubject(true)
 	rc.FinishAction("successful")
 	return nil
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net/http"
 )
 
 // handleProvision routes a provision action based on the current state.
@@ -44,14 +45,51 @@ func runProvision(rc *RunContext) error {
 		}
 	}
 
-	// Sandbox API integration (TODO).
+	// Sandbox API integration: get or book placement.
 	if rc.SandboxAPIInUse() {
-		log.Printf("runProvision: sandbox get needed for subject=%s (TODO)", rc.SubjectName)
+		result, err := sandboxGet(rc, "provision")
+		if err != nil {
+			log.Printf("runProvision: sandbox get error for subject=%s: %v", rc.SubjectName, err)
+			return handleProvisionError(rc)
+		}
+		switch result.Status {
+		case "error":
+			return handleProvisionError(rc)
+		case "queued":
+			// Update state to provision-queued and poll.
+			if err := rc.SubjectUpdate(SubjectPatch{
+				Patch: PatchBody{
+					Metadata: &PatchMetadata{
+						Labels: map[string]string{"state": "provision-queued"},
+					},
+					Spec: &PatchSpec{
+						Vars: map[string]interface{}{
+							"current_state": "provision-queued",
+						},
+					},
+					Status: map[string]interface{}{
+						"sandboxAPIJobs": map[string]interface{}{
+							"provision": map[string]interface{}{
+								"placementStatus": "queued",
+								"lastCheckTimestamp": nowUTC(),
+							},
+						},
+					},
+					SkipUpdateProcessing: true,
+				},
+			}); err != nil {
+				return err
+			}
+			return rc.ContinueAction("30s")
+		}
 	}
 
 	if !rc.DeployerDisabled("provision") {
-		// Tower job launch needed (TODO).
-		log.Printf("runProvision: tower job launch needed for subject=%s (TODO)", rc.SubjectName)
+		// Launch Tower job for provisioning.
+		if err := launchTowerJob(rc, "provision", "provisioning", nil); err != nil {
+			log.Printf("runProvision: tower launch failed for subject=%s: %v", rc.SubjectName, err)
+			return handleProvisionError(rc)
+		}
 		return rc.ContinueAction("5m")
 	}
 
@@ -227,9 +265,100 @@ func handleProvisionFailed(rc *RunContext) error {
 	return nil
 }
 
-// checkProvisionQueue checks whether a queued provision can proceed.
-// TODO: implement with sandbox API queue checking.
+// checkProvisionQueue checks whether a queued provision can proceed
+// by polling the sandbox API placement status.
 func checkProvisionQueue(rc *RunContext) error {
-	log.Printf("checkProvisionQueue: waiting for provision queue for subject=%s (TODO)", rc.SubjectName)
-	return rc.ContinueAction("30s")
+	uuid := rc.UUID()
+	if uuid == "" {
+		return handleProvisionError(rc)
+	}
+
+	accessToken, err := sandboxLogin(rc)
+	if err != nil {
+		log.Printf("checkProvisionQueue: login failed for subject=%s: %v", rc.SubjectName, err)
+		return handleProvisionError(rc)
+	}
+
+	client := getSandboxClient(rc)
+	placement, statusCode, err := client.GetPlacement(accessToken, uuid)
+	if err != nil {
+		log.Printf("checkProvisionQueue: get placement failed for subject=%s: %v", rc.SubjectName, err)
+		return handleProvisionError(rc)
+	}
+
+	// 404 or error status -> provision error.
+	if statusCode == http.StatusNotFound {
+		log.Printf("checkProvisionQueue: placement not found for subject=%s", rc.SubjectName)
+		return handleProvisionError(rc)
+	}
+
+	placementStatus, _ := placement["status"].(string)
+
+	switch placementStatus {
+	case "error":
+		log.Printf("checkProvisionQueue: placement error for subject=%s", rc.SubjectName)
+		return handleProvisionError(rc)
+
+	case "queued":
+		// Still queued, update status and continue polling.
+		if err := rc.SubjectUpdate(SubjectPatch{
+			Patch: PatchBody{
+				Status: map[string]interface{}{
+					"sandboxAPIJobs": map[string]interface{}{
+						"provision": map[string]interface{}{
+							"placementStatus":    "queued",
+							"lastCheckTimestamp": nowUTC(),
+						},
+					},
+				},
+				SkipUpdateProcessing: true,
+			},
+		}); err != nil {
+			return err
+		}
+		return rc.ContinueAction("30s")
+
+	default:
+		// Success: extract vars, update subject, and restart provision.
+		dynamicVars, labels := extractSandboxVars(placement)
+		patch := PatchBody{SkipUpdateProcessing: true}
+
+		// Merge labels.
+		allLabels := make(map[string]string)
+		for k, v := range labels {
+			allLabels[k] = v
+		}
+		allLabels["state"] = "provision-pending"
+		patch.Metadata = &PatchMetadata{Labels: allLabels}
+
+		// Merge dynamic vars into job_vars.
+		specVars := map[string]interface{}{
+			"current_state": "provision-pending",
+		}
+		if len(dynamicVars) > 0 {
+			jv := rc.JobVars()
+			if jv == nil {
+				jv = make(map[string]interface{})
+			}
+			mergeMap(jv, dynamicVars)
+			specVars["job_vars"] = jv
+		}
+		patch.Spec = &PatchSpec{Vars: specVars}
+
+		patch.Status = map[string]interface{}{
+			"sandboxAPIJobs": map[string]interface{}{
+				"provision": map[string]interface{}{
+					"placementStatus":   placementStatus,
+					"dequeuedTimestamp": nowUTC(),
+				},
+			},
+		}
+
+		if err := rc.SubjectUpdate(SubjectPatch{Patch: patch}); err != nil {
+			return err
+		}
+
+		// Restart the provision flow now that sandbox is ready.
+		return runProvision(rc)
+	}
 }

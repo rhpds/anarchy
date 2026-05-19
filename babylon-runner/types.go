@@ -22,7 +22,9 @@ type Handler struct {
 
 // RunResult is the body for POST /run/{name}.
 type RunResult struct {
-	Result ResultPayload `json:"result"`
+	Result        ResultPayload          `json:"result"`
+	FinishAction  *FinishActionDirective  `json:"finishAction,omitempty"`
+	DeleteSubject *DeleteSubjectDirective `json:"deleteSubject,omitempty"`
 }
 
 // ResultPayload holds the outcome of a handler execution.
@@ -30,6 +32,16 @@ type ResultPayload struct {
 	RC            int    `json:"rc"`
 	Status        string `json:"status"` // "successful" or "failed"
 	StatusMessage string `json:"statusMessage,omitempty"`
+}
+
+// FinishActionDirective signals the operator to finish the current action.
+type FinishActionDirective struct {
+	State string `json:"state"`
+}
+
+// DeleteSubjectDirective signals the operator to delete the subject.
+type DeleteSubjectDirective struct {
+	RemoveFinalizers bool `json:"removeFinalizers"`
 }
 
 // SubjectPatch is the body for PATCH /run/subject/{name}.

@@ -93,6 +93,44 @@ func newTestRunContext(t *testing.T, server *httptest.Server) *RunContext {
 	}
 }
 
+// newTestTowerServer creates a mock Tower server that handles the full
+// LaunchJob workflow (token, org, inventory, project, template, launch).
+// Returns the server URL.
+func newTestTowerServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	idCounter := 0
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "POST":
+			idCounter++
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":    float64(idCounter),
+				"token": "test-token",
+			})
+		case "DELETE":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			// GET job status (for checkDeployerJob)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":     float64(42),
+				"status": "successful",
+			})
+		}
+	}))
+}
+
+// withTowerServer configures the RunContext with a mock tower server
+// and the necessary __meta__ configuration.
+func withTowerServer(rc *RunContext, towerServer *httptest.Server) {
+	rc.TowerBaseURL = towerServer.URL
+	setNested(rc.Payload.Governor, map[string]interface{}{
+		"deployer": map[string]interface{}{
+			"scm_url": "https://github.com/example/repo.git",
+			"scm_ref": "main",
+		},
+	}, "spec", "vars", "__meta__")
+}
+
 // --- handleEventCreate tests ---
 
 func TestHandleEventCreate(t *testing.T) {
@@ -320,6 +358,11 @@ func TestHandleEventDeleteWithoutDestroy(t *testing.T) {
 		t.Errorf("desired_state = %v, want destroyed", vars["desired_state"])
 	}
 
+	// DeleteSubject should have been called.
+	if rc.deleteSubjectDirective == nil {
+		t.Error("expected DeleteSubject to be called")
+	}
+
 	// FinishAction should have been called.
 	if !rc.finished {
 		t.Error("expected FinishAction to be called")
@@ -329,7 +372,7 @@ func TestHandleEventDeleteWithoutDestroy(t *testing.T) {
 // --- handleDestroy tests ---
 
 func TestHandleDestroyWithCatchAll(t *testing.T) {
-	server, calls := newTestAnarchyServer(t)
+	server, _ := newTestAnarchyServer(t)
 	defer server.Close()
 
 	rc := newTestRunContext(t, server)
@@ -343,9 +386,9 @@ func TestHandleDestroyWithCatchAll(t *testing.T) {
 		t.Fatalf("handleDestroy returned error: %v", err)
 	}
 
-	// Should finish immediately without any API calls.
-	if len(*calls) != 0 {
-		t.Errorf("expected 0 calls with catch-all, got %d", len(*calls))
+	// Verify DeleteSubject was called.
+	if rc.deleteSubjectDirective == nil {
+		t.Error("expected DeleteSubject to be called")
 	}
 
 	if !rc.finished {
@@ -357,8 +400,12 @@ func TestHandleDestroyPending(t *testing.T) {
 	server, calls := newTestAnarchyServer(t)
 	defer server.Close()
 
+	towerServer := newTestTowerServer(t)
+	defer towerServer.Close()
+
 	rc := newTestRunContext(t, server)
 	rc.ActionName = "destroy"
+	withTowerServer(rc, towerServer)
 
 	// Set state to destroy-pending with no sandbox API.
 	setNested(rc.Payload.Subject, "destroy-pending", "spec", "vars", "current_state")
@@ -367,9 +414,9 @@ func TestHandleDestroyPending(t *testing.T) {
 		t.Fatalf("handleDestroy returned error: %v", err)
 	}
 
-	// Should set startTimestamp and schedule continuation.
-	if len(*calls) != 2 {
-		t.Fatalf("expected 2 calls, got %d", len(*calls))
+	// Should set startTimestamp, launch tower job (PATCH with towerJobs), and schedule continuation.
+	if len(*calls) < 3 {
+		t.Fatalf("expected at least 3 calls, got %d", len(*calls))
 	}
 
 	// First call: PATCH to set startTimestamp.
@@ -385,19 +432,19 @@ func TestHandleDestroyPending(t *testing.T) {
 		t.Error("expected startTimestamp to be set")
 	}
 
-	// Second call: POST to schedule action continuation.
-	c1 := (*calls)[1]
-	if c1.Method != http.MethodPost {
-		t.Errorf("call[1] method = %s, want POST", c1.Method)
+	// Last call: POST to schedule action continuation.
+	lastCall := (*calls)[len(*calls)-1]
+	if lastCall.Method != http.MethodPost {
+		t.Errorf("last call method = %s, want POST", lastCall.Method)
 	}
-	if c1.Path != "/run/subject/test-subject/actions" {
-		t.Errorf("call[1] path = %s, want /run/subject/test-subject/actions", c1.Path)
+	if lastCall.Path != "/run/subject/test-subject/actions" {
+		t.Errorf("last call path = %s, want /run/subject/test-subject/actions", lastCall.Path)
 	}
-	if c1.Body["action"] != "destroy" {
-		t.Errorf("action = %v, want destroy", c1.Body["action"])
+	if lastCall.Body["action"] != "destroy" {
+		t.Errorf("action = %v, want destroy", lastCall.Body["action"])
 	}
-	if c1.Body["after"] != "5m" {
-		t.Errorf("after = %v, want 5m", c1.Body["after"])
+	if lastCall.Body["after"] != "5m" {
+		t.Errorf("after = %v, want 5m", lastCall.Body["after"])
 	}
 }
 
@@ -460,6 +507,11 @@ func TestHandleDestroyComplete(t *testing.T) {
 	// Verify skip_update_processing.
 	if patch["skip_update_processing"] != true {
 		t.Error("expected skip_update_processing to be true")
+	}
+
+	// Verify DeleteSubject was called.
+	if rc.deleteSubjectDirective == nil {
+		t.Error("expected DeleteSubject to be called")
 	}
 
 	// Verify FinishAction was called.
