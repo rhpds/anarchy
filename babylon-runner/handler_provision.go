@@ -46,6 +46,7 @@ func runProvision(rc *RunContext) error {
 	}
 
 	// Sandbox API integration: get or book placement.
+	var dynamicJobVars map[string]interface{}
 	if rc.SandboxAPIInUse() {
 		result, err := sandboxGet(rc, "provision")
 		if err != nil {
@@ -70,7 +71,7 @@ func runProvision(rc *RunContext) error {
 					Status: map[string]interface{}{
 						"sandboxAPIJobs": map[string]interface{}{
 							"provision": map[string]interface{}{
-								"placementStatus": "queued",
+								"placementStatus":    "queued",
 								"lastCheckTimestamp": nowUTC(),
 							},
 						},
@@ -82,11 +83,13 @@ func runProvision(rc *RunContext) error {
 			}
 			return rc.ContinueAction("30s")
 		}
+		// Success: capture dynamic vars (with creds) for Tower.
+		dynamicJobVars = result.DynamicVars
 	}
 
 	if !rc.DeployerDisabled("provision") {
 		// Launch Tower job for provisioning.
-		if err := launchTowerJob(rc, "provision", "provisioning", nil); err != nil {
+		if err := launchTowerJob(rc, "provision", "provisioning", nil, dynamicJobVars); err != nil {
 			log.Printf("runProvision: tower launch failed for subject=%s: %v", rc.SubjectName, err)
 			return handleProvisionError(rc)
 		}

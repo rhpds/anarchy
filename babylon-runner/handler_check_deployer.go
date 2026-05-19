@@ -23,10 +23,17 @@ func checkDeployerJob(rc *RunContext, action string) error {
 	}
 	deployerJob := int(deployerJobFloat)
 
-	// Create TowerClient using shared helper.
-	tc, _, err := getTowerClientForAction(rc)
+	// Use towerHost from existing job status to connect to the same
+	// controller where the job was originally launched.
+	towerHost, _ := actionJob["towerHost"].(string)
+	if towerHost == "" {
+		log.Printf("checkDeployerJob: no towerHost in job status for action=%s subject=%s", action, rc.SubjectName)
+		return rc.ContinueAction("5m")
+	}
+
+	tc, err := getTowerClientForHost(rc, towerHost)
 	if err != nil {
-		log.Printf("checkDeployerJob: failed to get tower client for action=%s subject=%s: %v", action, rc.SubjectName, err)
+		log.Printf("checkDeployerJob: failed to get tower client for host=%s action=%s subject=%s: %v", towerHost, action, rc.SubjectName, err)
 		return rc.ContinueAction("5m")
 	}
 

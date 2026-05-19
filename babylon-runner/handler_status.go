@@ -50,9 +50,13 @@ func runStatus(rc *RunContext) error {
 
 	if !rc.DeployerDisabled("status") {
 		// Get sandbox vars for Tower job.
+		var dynamicJobVars map[string]interface{}
 		if rc.SandboxAPIInUse() {
-			if _, err := sandboxGet(rc, "status"); err != nil {
+			result, err := sandboxGet(rc, "status")
+			if err != nil {
 				log.Printf("runStatus: sandbox get error for subject=%s: %v", rc.SubjectName, err)
+			} else if result != nil {
+				dynamicJobVars = result.DynamicVars
 			}
 		}
 
@@ -61,7 +65,7 @@ func runStatus(rc *RunContext) error {
 		extraSpecVars := map[string]interface{}{
 			"check_status_state": "running",
 		}
-		if err := launchTowerJob(rc, "status", "", extraSpecVars); err != nil {
+		if err := launchTowerJob(rc, "status", "", extraSpecVars, dynamicJobVars); err != nil {
 			log.Printf("runStatus: tower launch failed for subject=%s: %v", rc.SubjectName, err)
 			return err
 		}

@@ -84,35 +84,133 @@ func getTowerClientForAction(rc *RunContext) (*TowerClient, string, error) {
 }
 
 // buildJobExtraVars assembles the extra variables for a Tower job by
-// merging governor job_vars, subject job_vars, and callback vars.
-func buildJobExtraVars(rc *RunContext, action string) map[string]interface{} {
+// merging subject job_vars, governor job_vars, and dynamic vars (sandbox
+// creds), then applying action-specific overrides and callback vars.
+// This matches the Ansible assembly order:
+//
+//	subject | combine(governor) | combine(dynamic) | remove_keys(__meta__)
+//	| combine(action_extra_vars) | combine(callback_vars)
+//	| combine(output_dir) | combine(scm_ref_var)
+func buildJobExtraVars(rc *RunContext, action string, dynamicJobVars map[string]interface{}) map[string]interface{} {
 	extraVars := make(map[string]interface{})
 
-	if gjv := rc.GovernorJobVars(); gjv != nil {
-		mergeMap(extraVars, gjv)
-	}
+	// Subject first (lowest priority).
 	if sjv := rc.JobVars(); sjv != nil {
 		mergeMap(extraVars, sjv)
 	}
+	// Governor overrides subject.
+	if gjv := rc.GovernorJobVars(); gjv != nil {
+		mergeMap(extraVars, gjv)
+	}
+	// Dynamic vars (sandbox creds) override both.
+	if dynamicJobVars != nil {
+		mergeMap(extraVars, dynamicJobVars)
+	}
 
-	// Add callback vars from the action spec.
+	// Remove __meta__ from merged vars.
+	delete(extraVars, "__meta__")
+
+	// Action extra_vars from deployer config, defaulting to {"ACTION": action}.
+	meta := rc.Meta()
+	deployer := getNestedMap(meta, "deployer")
+	actionExtraVars := getNestedMap(deployer, "actions", action, "extra_vars")
+	if actionExtraVars != nil {
+		mergeMap(extraVars, actionExtraVars)
+	} else {
+		extraVars["ACTION"] = action
+	}
+
+	// Callback vars with configurable var names.
+	callbackURLVar := "agnosticd_callback_url"
+	callbackTokenVar := "agnosticd_callback_token"
+	if deployer != nil {
+		if v, ok := deployer["callback_url_var"].(string); ok && v != "" {
+			callbackURLVar = v
+		}
+		if v, ok := deployer["callback_token_var"].(string); ok && v != "" {
+			callbackTokenVar = v
+		}
+	}
 	if rc.Payload.Action != nil {
 		if u := getNestedString(rc.Payload.Action, "spec", "callbackUrl"); u != "" {
-			extraVars["agnosticd_callback_url"] = u
+			extraVars[callbackURLVar] = u
 		}
 		if t := getNestedString(rc.Payload.Action, "spec", "callbackToken"); t != "" {
-			extraVars["agnosticd_callback_token"] = t
+			extraVars[callbackTokenVar] = t
+		}
+	}
+
+	// output_dir if deployer_type is "agnosticd" (default).
+	deployerType := "agnosticd"
+	if deployer != nil {
+		if dt, ok := deployer["type"].(string); ok && dt != "" {
+			deployerType = dt
+		}
+	}
+	if deployerType == "agnosticd" {
+		uuid := rc.UUID()
+		if uuid != "" {
+			extraVars["output_dir"] = "/tmp/output-" + uuid
+		}
+	}
+
+	// scm_ref_var injection.
+	if deployer != nil {
+		if scmRefVar, ok := deployer["scm_ref_var"].(string); ok && scmRefVar != "" {
+			scmRef := getNestedString(deployer, "scm_ref")
+			if scmRef != "" {
+				extraVars[scmRefVar] = scmRef
+			}
 		}
 	}
 
 	return extraVars
 }
 
+// getTowerClientForHost creates a TowerClient for a specific controller
+// hostname by finding the matching entry in __meta__.ansible_controllers.
+// This is used by checkDeployerJob and cancelTowerJob to connect to the
+// same controller where the job was originally launched.
+func getTowerClientForHost(rc *RunContext, hostname string) (*TowerClient, error) {
+	if rc.TowerBaseURL != "" {
+		return &TowerClient{
+			baseURL: rc.TowerBaseURL,
+			client:  &http.Client{},
+		}, nil
+	}
+
+	meta := rc.Meta()
+	if meta == nil {
+		return nil, fmt.Errorf("no __meta__ in governor")
+	}
+
+	controllersRaw, ok := meta["ansible_controllers"].([]interface{})
+	if !ok || len(controllersRaw) == 0 {
+		return nil, fmt.Errorf("no ansible_controllers in __meta__")
+	}
+
+	for _, c := range controllersRaw {
+		m, ok := c.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		h, _ := m["hostname"].(string)
+		if h == hostname {
+			username, _ := m["user"].(string)
+			password, _ := m["password"].(string)
+			return NewTowerClient(hostname, username, password), nil
+		}
+	}
+
+	return nil, fmt.Errorf("controller %q not found in ansible_controllers", hostname)
+}
+
 // launchTowerJob selects a controller, builds the job config, launches
 // the Tower job, and updates the subject status. If newState is non-empty,
 // it also transitions labels and current_state. extraSpecVars are merged
 // into the subject spec.vars patch (e.g. check_status_state for status).
-func launchTowerJob(rc *RunContext, action, newState string, extraSpecVars map[string]interface{}) error {
+// dynamicJobVars are sandbox vars with credentials, merged into Tower extra_vars.
+func launchTowerJob(rc *RunContext, action, newState string, extraSpecVars, dynamicJobVars map[string]interface{}) error {
 	meta := rc.Meta()
 	deployer := getNestedMap(meta, "deployer")
 
@@ -145,7 +243,7 @@ func launchTowerJob(rc *RunContext, action, newState string, extraSpecVars map[s
 		ProjectSCMRef: scmRef,
 		TemplateName:  rc.SubjectName + "-" + action,
 		Playbook:      playbook,
-		ExtraVars:     buildJobExtraVars(rc, action),
+		ExtraVars:     buildJobExtraVars(rc, action, dynamicJobVars),
 		Timeout:       timeout,
 	}
 
@@ -215,9 +313,16 @@ func cancelTowerJob(rc *RunContext, action string) {
 		return
 	}
 
-	tc, _, err := getTowerClientForAction(rc)
+	// Use towerHost from the job status to connect to the correct controller.
+	towerHost, _ := jobInfo["towerHost"].(string)
+	if towerHost == "" {
+		log.Printf("cancelTowerJob: no towerHost in job status for action=%s", action)
+		return
+	}
+
+	tc, err := getTowerClientForHost(rc, towerHost)
 	if err != nil {
-		log.Printf("cancelTowerJob: cannot get tower client: %v", err)
+		log.Printf("cancelTowerJob: cannot get tower client for host=%s: %v", towerHost, err)
 		return
 	}
 

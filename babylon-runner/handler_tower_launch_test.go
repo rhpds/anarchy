@@ -331,12 +331,15 @@ func TestGetTowerClientForAction(t *testing.T) {
 
 func TestBuildJobExtraVars(t *testing.T) {
 	tests := []struct {
-		name  string
-		setup func(*RunContext)
-		want  map[string]interface{}
+		name           string
+		action         string
+		dynamicJobVars map[string]interface{}
+		setup          func(*RunContext)
+		want           map[string]interface{}
 	}{
 		{
-			name: "governor job_vars + subject job_vars merged",
+			name:   "governor job_vars + subject job_vars merged with ACTION and output_dir",
+			action: "provision",
 			setup: func(rc *RunContext) {
 				setNested(rc.Payload.Governor, map[string]interface{}{
 					"cloud_provider": "ec2",
@@ -352,31 +355,97 @@ func TestBuildJobExtraVars(t *testing.T) {
 				"region":         "us-east-1",
 				"guid":           "abc123",
 				"uuid":           "xyz789",
+				"ACTION":         "provision",
+				"output_dir":     "/tmp/output-xyz789",
 			},
 		},
 		{
-			name: "subject vars override governor vars",
+			name:   "governor vars override subject vars",
+			action: "provision",
 			setup: func(rc *RunContext) {
 				setNested(rc.Payload.Governor, map[string]interface{}{
 					"cloud_provider": "ec2",
 					"region":         "us-east-1",
 				}, "spec", "vars", "job_vars")
 				setNested(rc.Payload.Subject, map[string]interface{}{
-					"region": "us-west-2", // Override
+					"region": "us-west-2", // Subject sets region
 					"guid":   "abc123",
+					"uuid":   "xyz789",
 				}, "spec", "vars", "job_vars")
 			},
 			want: map[string]interface{}{
 				"cloud_provider": "ec2",
-				"region":         "us-west-2",
+				"region":         "us-east-1", // Governor wins
 				"guid":           "abc123",
+				"uuid":           "xyz789",
+				"ACTION":         "provision",
+				"output_dir":     "/tmp/output-xyz789",
 			},
 		},
 		{
-			name: "callback URL and token from action spec",
+			name:   "dynamic vars override governor and subject",
+			action: "provision",
+			dynamicJobVars: map[string]interface{}{
+				"sandbox_name":         "sandbox-123",
+				"aws_access_key_id":    "AKIA...",
+				"aws_secret_access_key": "secret...",
+			},
 			setup: func(rc *RunContext) {
-				// Clear default governor job_vars
+				setNested(rc.Payload.Governor, map[string]interface{}{
+					"cloud_provider": "ec2",
+				}, "spec", "vars", "job_vars")
+				setNested(rc.Payload.Subject, map[string]interface{}{
+					"guid": "abc123",
+					"uuid": "xyz789",
+				}, "spec", "vars", "job_vars")
+			},
+			want: map[string]interface{}{
+				"cloud_provider":        "ec2",
+				"guid":                  "abc123",
+				"uuid":                  "xyz789",
+				"sandbox_name":          "sandbox-123",
+				"aws_access_key_id":     "AKIA...",
+				"aws_secret_access_key": "secret...",
+				"ACTION":                "provision",
+				"output_dir":            "/tmp/output-xyz789",
+			},
+		},
+		{
+			name:   "__meta__ removed from merged vars",
+			action: "provision",
+			setup: func(rc *RunContext) {
+				// Simulate __meta__ being present in governor job_vars.
+				// buildJobExtraVars must strip it from the merged result.
+				setNested(rc.Payload.Governor, map[string]interface{}{
+					"cloud_provider": "ec2",
+					"__meta__": map[string]interface{}{
+						"deployer": map[string]interface{}{
+							"type": "agnosticd",
+						},
+					},
+				}, "spec", "vars", "job_vars")
+				setNested(rc.Payload.Subject, map[string]interface{}{
+					"guid": "abc123",
+					"uuid": "xyz789",
+				}, "spec", "vars", "job_vars")
+			},
+			want: map[string]interface{}{
+				"cloud_provider": "ec2",
+				// __meta__ should NOT be present
+				"guid":       "abc123",
+				"uuid":       "xyz789",
+				"ACTION":     "provision",
+				"output_dir": "/tmp/output-xyz789",
+			},
+		},
+		{
+			name:   "callback URL and token from action spec",
+			action: "provision",
+			setup: func(rc *RunContext) {
 				setNested(rc.Payload.Governor, map[string]interface{}{}, "spec", "vars", "job_vars")
+				setNested(rc.Payload.Subject, map[string]interface{}{
+					"uuid": "xyz789",
+				}, "spec", "vars", "job_vars")
 				rc.Payload.Action = map[string]interface{}{
 					"spec": map[string]interface{}{
 						"callbackUrl":   "https://example.com/callback",
@@ -385,52 +454,162 @@ func TestBuildJobExtraVars(t *testing.T) {
 				}
 			},
 			want: map[string]interface{}{
+				"uuid":                     "xyz789",
 				"agnosticd_callback_url":   "https://example.com/callback",
 				"agnosticd_callback_token": "secret-token",
+				"ACTION":                   "provision",
+				"output_dir":               "/tmp/output-xyz789",
 			},
 		},
 		{
-			name: "no action - no callback vars",
+			name:   "custom callback var names from deployer config",
+			action: "provision",
+			setup: func(rc *RunContext) {
+				// __meta__ lives at governor.spec.vars.__meta__, not inside job_vars.
+				setNested(rc.Payload.Governor, map[string]interface{}{
+					"callback_url_var":   "custom_callback_url",
+					"callback_token_var": "custom_callback_token",
+				}, "spec", "vars", "__meta__", "deployer")
+				setNested(rc.Payload.Governor, map[string]interface{}{}, "spec", "vars", "job_vars")
+				setNested(rc.Payload.Subject, map[string]interface{}{
+					"uuid": "xyz789",
+				}, "spec", "vars", "job_vars")
+				rc.Payload.Action = map[string]interface{}{
+					"spec": map[string]interface{}{
+						"callbackUrl":   "https://example.com/callback",
+						"callbackToken": "secret-token",
+					},
+				}
+			},
+			want: map[string]interface{}{
+				"uuid":                  "xyz789",
+				"custom_callback_url":   "https://example.com/callback",
+				"custom_callback_token": "secret-token",
+				"ACTION":                "provision",
+				"output_dir":            "/tmp/output-xyz789",
+			},
+		},
+		{
+			name:   "action extra_vars from deployer config override ACTION default",
+			action: "provision",
+			setup: func(rc *RunContext) {
+				// __meta__ lives at governor.spec.vars.__meta__.
+				setNested(rc.Payload.Governor, map[string]interface{}{
+					"actions": map[string]interface{}{
+						"provision": map[string]interface{}{
+							"extra_vars": map[string]interface{}{
+								"ACTION":     "custom_provision",
+								"extra_flag": true,
+							},
+						},
+					},
+				}, "spec", "vars", "__meta__", "deployer")
+				setNested(rc.Payload.Governor, map[string]interface{}{}, "spec", "vars", "job_vars")
+				setNested(rc.Payload.Subject, map[string]interface{}{
+					"uuid": "xyz789",
+				}, "spec", "vars", "job_vars")
+			},
+			want: map[string]interface{}{
+				"uuid":       "xyz789",
+				"ACTION":     "custom_provision",
+				"extra_flag": true,
+				"output_dir": "/tmp/output-xyz789",
+			},
+		},
+		{
+			name:   "no action - no callback vars",
+			action: "provision",
 			setup: func(rc *RunContext) {
 				rc.Payload.Action = nil
 				setNested(rc.Payload.Governor, map[string]interface{}{
 					"cloud_provider": "ec2",
 				}, "spec", "vars", "job_vars")
-			},
-			want: map[string]interface{}{
-				"cloud_provider": "ec2",
-			},
-		},
-		{
-			name: "empty job_vars on both - empty result with callback",
-			setup: func(rc *RunContext) {
-				setNested(rc.Payload.Governor, map[string]interface{}{}, "spec", "vars", "job_vars")
-				setNested(rc.Payload.Subject, map[string]interface{}{}, "spec", "vars", "job_vars")
-				rc.Payload.Action = map[string]interface{}{
-					"spec": map[string]interface{}{
-						"callbackUrl": "https://example.com/callback",
-					},
-				}
-			},
-			want: map[string]interface{}{
-				"agnosticd_callback_url": "https://example.com/callback",
-			},
-		},
-		{
-			name: "nil job_vars on governor only",
-			setup: func(rc *RunContext) {
-				// Clear default governor job_vars
-				setNested(rc.Payload.Governor, map[string]interface{}{}, "spec", "vars", "job_vars")
 				setNested(rc.Payload.Subject, map[string]interface{}{
-					"guid": "abc123",
+					"uuid": "xyz789",
 				}, "spec", "vars", "job_vars")
 			},
 			want: map[string]interface{}{
-				"guid": "abc123",
+				"cloud_provider": "ec2",
+				"uuid":           "xyz789",
+				"ACTION":         "provision",
+				"output_dir":     "/tmp/output-xyz789",
 			},
 		},
 		{
-			name: "nil job_vars on subject only",
+			name:   "output_dir not set when deployer type is not agnosticd",
+			action: "provision",
+			setup: func(rc *RunContext) {
+				// __meta__ lives at governor.spec.vars.__meta__.
+				setNested(rc.Payload.Governor, map[string]interface{}{
+					"type": "helm",
+				}, "spec", "vars", "__meta__", "deployer")
+				setNested(rc.Payload.Governor, map[string]interface{}{}, "spec", "vars", "job_vars")
+				setNested(rc.Payload.Subject, map[string]interface{}{
+					"uuid": "xyz789",
+				}, "spec", "vars", "job_vars")
+			},
+			want: map[string]interface{}{
+				"uuid":   "xyz789",
+				"ACTION": "provision",
+				// no output_dir
+			},
+		},
+		{
+			name:   "scm_ref_var injection",
+			action: "provision",
+			setup: func(rc *RunContext) {
+				// __meta__ lives at governor.spec.vars.__meta__.
+				setNested(rc.Payload.Governor, map[string]interface{}{
+					"scm_ref":     "v2.0.0",
+					"scm_ref_var": "agnosticd_version",
+				}, "spec", "vars", "__meta__", "deployer")
+				setNested(rc.Payload.Governor, map[string]interface{}{}, "spec", "vars", "job_vars")
+				setNested(rc.Payload.Subject, map[string]interface{}{
+					"uuid": "xyz789",
+				}, "spec", "vars", "job_vars")
+			},
+			want: map[string]interface{}{
+				"uuid":              "xyz789",
+				"ACTION":            "provision",
+				"output_dir":        "/tmp/output-xyz789",
+				"agnosticd_version": "v2.0.0",
+			},
+		},
+		{
+			name:   "destroy action gets ACTION=destroy",
+			action: "destroy",
+			setup: func(rc *RunContext) {
+				setNested(rc.Payload.Governor, map[string]interface{}{}, "spec", "vars", "job_vars")
+				setNested(rc.Payload.Subject, map[string]interface{}{
+					"uuid": "xyz789",
+				}, "spec", "vars", "job_vars")
+			},
+			want: map[string]interface{}{
+				"uuid":       "xyz789",
+				"ACTION":     "destroy",
+				"output_dir": "/tmp/output-xyz789",
+			},
+		},
+		{
+			name:   "nil job_vars on governor only",
+			action: "provision",
+			setup: func(rc *RunContext) {
+				setNested(rc.Payload.Governor, map[string]interface{}{}, "spec", "vars", "job_vars")
+				setNested(rc.Payload.Subject, map[string]interface{}{
+					"guid": "abc123",
+					"uuid": "xyz789",
+				}, "spec", "vars", "job_vars")
+			},
+			want: map[string]interface{}{
+				"guid":       "abc123",
+				"uuid":       "xyz789",
+				"ACTION":     "provision",
+				"output_dir": "/tmp/output-xyz789",
+			},
+		},
+		{
+			name:   "nil job_vars on subject only",
+			action: "provision",
 			setup: func(rc *RunContext) {
 				setNested(rc.Payload.Governor, map[string]interface{}{
 					"cloud_provider": "ec2",
@@ -438,10 +617,13 @@ func TestBuildJobExtraVars(t *testing.T) {
 			},
 			want: map[string]interface{}{
 				"cloud_provider": "ec2",
+				"ACTION":         "provision",
+				// No output_dir because no uuid
 			},
 		},
 		{
-			name: "all job_vars and callback vars combined",
+			name:   "all job_vars and callback vars combined",
+			action: "provision",
 			setup: func(rc *RunContext) {
 				setNested(rc.Payload.Governor, map[string]interface{}{
 					"cloud_provider": "ec2",
@@ -449,6 +631,7 @@ func TestBuildJobExtraVars(t *testing.T) {
 				}, "spec", "vars", "job_vars")
 				setNested(rc.Payload.Subject, map[string]interface{}{
 					"guid": "abc123",
+					"uuid": "xyz789",
 				}, "spec", "vars", "job_vars")
 				rc.Payload.Action = map[string]interface{}{
 					"spec": map[string]interface{}{
@@ -461,8 +644,11 @@ func TestBuildJobExtraVars(t *testing.T) {
 				"cloud_provider":           "ec2",
 				"region":                   "us-east-1",
 				"guid":                     "abc123",
+				"uuid":                     "xyz789",
 				"agnosticd_callback_url":   "https://example.com/callback",
 				"agnosticd_callback_token": "secret-token",
+				"ACTION":                   "provision",
+				"output_dir":               "/tmp/output-xyz789",
 			},
 		},
 	}
@@ -475,16 +661,25 @@ func TestBuildJobExtraVars(t *testing.T) {
 			rc := newTestRunContext(t, server)
 			tt.setup(rc)
 
-			got := buildJobExtraVars(rc, "provision")
+			action := tt.action
+			if action == "" {
+				action = "provision"
+			}
+			got := buildJobExtraVars(rc, action, tt.dynamicJobVars)
 
 			if len(got) != len(tt.want) {
-				t.Errorf("buildJobExtraVars() returned %d vars, want %d", len(got), len(tt.want))
+				t.Errorf("buildJobExtraVars() returned %d vars, want %d\ngot:  %v\nwant: %v", len(got), len(tt.want), got, tt.want)
 			}
 
 			for k, v := range tt.want {
-				if got[k] != v {
+				if !interfaceEqual(got[k], v) {
 					t.Errorf("buildJobExtraVars()[%q] = %v, want %v", k, got[k], v)
 				}
+			}
+
+			// Verify __meta__ is never present.
+			if _, hasMetaKey := got["__meta__"]; hasMetaKey {
+				t.Error("buildJobExtraVars() should not contain __meta__ key")
 			}
 		})
 	}
@@ -558,6 +753,7 @@ func TestCancelTowerJob(t *testing.T) {
 					"provision": map[string]interface{}{
 						"deployerJob":    float64(42),
 						"startTimestamp": "2024-01-01T00:00:00Z",
+						"towerHost":     "tower1.example.com",
 					},
 				}, "status", "towerJobs")
 			},
@@ -572,10 +768,12 @@ func TestCancelTowerJob(t *testing.T) {
 					"provision": map[string]interface{}{
 						"deployerJob":    float64(42),
 						"startTimestamp": "2024-01-01T00:00:00Z",
+						"towerHost":     "tower1.example.com",
 					},
 					"destroy": map[string]interface{}{
 						"deployerJob":    float64(43),
 						"startTimestamp": "2024-01-01T00:00:00Z",
+						"towerHost":     "tower1.example.com",
 					},
 				}, "status", "towerJobs")
 			},
@@ -650,6 +848,7 @@ func TestCancelTowerJobFailure(t *testing.T) {
 		"provision": map[string]interface{}{
 			"deployerJob":    float64(42),
 			"startTimestamp": "2024-01-01T00:00:00Z",
+			"towerHost":     "tower1.example.com",
 		},
 	}, "status", "towerJobs")
 
@@ -682,15 +881,18 @@ func TestCancelAllIncompleteTowerJobs(t *testing.T) {
 						"deployerJob":       float64(42),
 						"startTimestamp":    "2024-01-01T00:00:00Z",
 						"completeTimestamp": "2024-01-01T01:00:00Z",
+						"towerHost":        "tower1.example.com",
 					},
 					"destroy": map[string]interface{}{
 						"deployerJob":    float64(43),
 						"startTimestamp": "2024-01-01T02:00:00Z",
+						"towerHost":     "tower1.example.com",
 						// No completeTimestamp - should be canceled
 					},
 					"start": map[string]interface{}{
 						"deployerJob":    float64(44),
 						"startTimestamp": "2024-01-01T03:00:00Z",
+						"towerHost":     "tower1.example.com",
 						// No completeTimestamp - should be canceled
 					},
 				}, "status", "towerJobs")
@@ -705,6 +907,7 @@ func TestCancelAllIncompleteTowerJobs(t *testing.T) {
 					"provision": map[string]interface{}{
 						"deployerJob":    float64(42),
 						"startTimestamp": "2024-01-01T00:00:00Z",
+						"towerHost":     "tower1.example.com",
 					},
 					"invalid": "not-a-map",
 				}

@@ -36,12 +36,16 @@ func runStop(rc *RunContext) error {
 
 	// If deployer not disabled: get sandbox vars and launch Tower job.
 	if !rc.DeployerDisabled("stop") {
+		var dynamicJobVars map[string]interface{}
 		if rc.SandboxAPIInUse() {
-			if _, err := sandboxGet(rc, "stop"); err != nil {
+			result, err := sandboxGet(rc, "stop")
+			if err != nil {
 				log.Printf("runStop: sandbox get error for subject=%s: %v", rc.SubjectName, err)
+			} else if result != nil {
+				dynamicJobVars = result.DynamicVars
 			}
 		}
-		if err := launchTowerJob(rc, "stop", "stopping", nil); err != nil {
+		if err := launchTowerJob(rc, "stop", "stopping", nil, dynamicJobVars); err != nil {
 			log.Printf("runStop: tower launch failed for subject=%s: %v", rc.SubjectName, err)
 			return err
 		}

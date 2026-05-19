@@ -63,13 +63,16 @@ func handleDestroy(rc *RunContext) error {
 // runDestroy initiates the destroy workflow.
 func runDestroy(rc *RunContext) error {
 	// Sandbox API integration: get placement for destroy vars.
+	var dynamicJobVars map[string]interface{}
 	if rc.SandboxAPIInUse() {
 		result, err := sandboxGet(rc, "destroy")
 		if err != nil {
 			log.Printf("runDestroy: sandbox get error for subject=%s: %v", rc.SubjectName, err)
-		}
-		if result != nil && result.Status == "error" {
-			log.Printf("runDestroy: sandbox placement in error state for subject=%s", rc.SubjectName)
+		} else if result != nil {
+			if result.Status == "error" {
+				log.Printf("runDestroy: sandbox placement in error state for subject=%s", rc.SubjectName)
+			}
+			dynamicJobVars = result.DynamicVars
 		}
 	}
 
@@ -77,7 +80,7 @@ func runDestroy(rc *RunContext) error {
 	cancelTowerJob(rc, "provision")
 
 	// Launch Tower job for destroy.
-	if err := launchTowerJob(rc, "destroy", "destroying", nil); err != nil {
+	if err := launchTowerJob(rc, "destroy", "destroying", nil, dynamicJobVars); err != nil {
 		log.Printf("runDestroy: tower launch failed for subject=%s: %v", rc.SubjectName, err)
 		return err
 	}
