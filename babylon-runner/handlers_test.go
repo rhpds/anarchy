@@ -204,8 +204,16 @@ func TestHandleEventCreateAlreadyInitialized(t *testing.T) {
 		t.Fatalf("handleEventCreate returned error: %v", err)
 	}
 
-	if len(*calls) != 0 {
-		t.Errorf("expected 0 calls for already initialized subject, got %d", len(*calls))
+	// Should still schedule provision action even when already initialized.
+	if len(*calls) != 1 {
+		t.Fatalf("expected 1 call (schedule provision), got %d", len(*calls))
+	}
+	c := (*calls)[0]
+	if c.Method != http.MethodPost {
+		t.Errorf("call method = %s, want POST", c.Method)
+	}
+	if c.Body["action"] != "provision" {
+		t.Errorf("scheduled action = %v, want provision", c.Body["action"])
 	}
 }
 
