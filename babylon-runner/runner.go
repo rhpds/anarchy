@@ -153,19 +153,23 @@ func (rc *RunContext) GovernorActions() map[string]interface{} {
 // Runner implements the main polling loop that fetches runs from the
 // Anarchy API, dispatches them to handlers, and posts results.
 type Runner struct {
-	cfg      Config
-	client   *http.Client
-	anarchy  *AnarchyClient
-	handlers map[string]HandlerFunc
+	cfg              Config
+	client           *http.Client
+	anarchy          *AnarchyClient
+	handlers         map[string]HandlerFunc
+	postMaxAttempts  int
+	postRetryDelay   time.Duration
 }
 
 // NewRunner creates a Runner with an HTTP client and AnarchyClient.
 func NewRunner(cfg Config) *Runner {
 	return &Runner{
-		cfg:      cfg,
-		client:   &http.Client{Timeout: time.Duration(cfg.RequestTimeout) * time.Second},
-		anarchy:  NewAnarchyClient(cfg),
-		handlers: make(map[string]HandlerFunc),
+		cfg:             cfg,
+		client:          &http.Client{Timeout: time.Duration(cfg.RequestTimeout) * time.Second},
+		anarchy:         NewAnarchyClient(cfg),
+		handlers:        make(map[string]HandlerFunc),
+		postMaxAttempts: 10,
+		postRetryDelay:  5 * time.Second,
 	}
 }
 
@@ -303,10 +307,10 @@ func (r *Runner) postResult(runName string, result RunResult) error {
 		return fmt.Errorf("marshal result: %w", err)
 	}
 
-	maxAttempts := 10
+	maxAttempts := r.postMaxAttempts
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if attempt > 0 {
-			delay := time.Duration(attempt) * 5 * time.Second
+			delay := time.Duration(attempt) * r.postRetryDelay
 			if delay > 60*time.Second {
 				delay = 60 * time.Second
 			}

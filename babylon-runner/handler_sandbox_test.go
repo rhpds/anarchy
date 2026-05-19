@@ -178,10 +178,28 @@ func TestSandboxLogin(t *testing.T) {
 		}
 	})
 
-	// Skipping this test because Login retries 40 times with 5s delays (200s total).
-	// The behavior is tested by integration tests.
 	t.Run("server error - returns error", func(t *testing.T) {
-		t.Skip("Skipping slow test - Login retries 40 times with 5s delays")
+		sandboxServer := newSimpleSandboxServer(t, map[string]http.HandlerFunc{
+			"/api/v1/login": func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			},
+		})
+		defer sandboxServer.Close()
+
+		anarchyServer, _ := newTestAnarchyServer(t)
+		defer anarchyServer.Close()
+
+		rc := newTestRunContext(t, anarchyServer)
+		setNested(rc.Payload.Governor, "test-login-token", "spec", "vars", "__meta__", "sandbox_api_login_token")
+		rc.SandboxBaseURL = sandboxServer.URL
+
+		_, err := sandboxLogin(rc)
+		if err == nil {
+			t.Fatal("expected error when server returns 500, got nil")
+		}
+		if !strings.Contains(err.Error(), "sandbox login") {
+			t.Errorf("error = %v, want 'sandbox login' error", err)
+		}
 	})
 }
 
@@ -684,7 +702,23 @@ func TestSandboxStart(t *testing.T) {
 	})
 
 	t.Run("login failure - returns error", func(t *testing.T) {
-		t.Skip("Skipping slow test - Login retries 40 times with 5s delays")
+		sandboxServer := newSimpleSandboxServer(t, map[string]http.HandlerFunc{
+			"/api/v1/login": func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			},
+		})
+		defer sandboxServer.Close()
+
+		anarchyServer, _ := newTestAnarchyServer(t)
+		defer anarchyServer.Close()
+
+		rc := newTestRunContext(t, anarchyServer)
+		withSandboxEnabled(rc, sandboxServer, "test-uuid-123")
+
+		err := sandboxStart(rc)
+		if err != nil && !strings.Contains(err.Error(), "sandbox login") {
+			t.Errorf("error = %v, want 'sandbox login' error", err)
+		}
 	})
 }
 
@@ -737,7 +771,23 @@ func TestSandboxStop(t *testing.T) {
 	})
 
 	t.Run("login failure - returns error", func(t *testing.T) {
-		t.Skip("Skipping slow test - Login retries 40 times with 5s delays")
+		sandboxServer := newSimpleSandboxServer(t, map[string]http.HandlerFunc{
+			"/api/v1/login": func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			},
+		})
+		defer sandboxServer.Close()
+
+		anarchyServer, _ := newTestAnarchyServer(t)
+		defer anarchyServer.Close()
+
+		rc := newTestRunContext(t, anarchyServer)
+		withSandboxEnabled(rc, sandboxServer, "test-uuid-123")
+
+		err := sandboxStop(rc)
+		if err != nil && !strings.Contains(err.Error(), "sandbox login") {
+			t.Errorf("error = %v, want 'sandbox login' error", err)
+		}
 	})
 }
 

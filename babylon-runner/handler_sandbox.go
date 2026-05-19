@@ -16,6 +16,7 @@ type SandboxResult struct {
 }
 
 // getSandboxClient creates a SandboxAPIClient, using rc.SandboxBaseURL for tests.
+// When SandboxBaseURL is set (test mode), retries and delays are minimized.
 func getSandboxClient(rc *RunContext) *SandboxAPIClient {
 	baseURL := DefaultSandboxAPIURL
 	if rc.SandboxBaseURL != "" {
@@ -28,7 +29,13 @@ func getSandboxClient(rc *RunContext) *SandboxAPIClient {
 			}
 		}
 	}
-	return NewSandboxAPIClient(baseURL)
+	client := NewSandboxAPIClient(baseURL)
+	// When SandboxBaseURL is set, we're in test mode — use fast retries.
+	if rc.SandboxBaseURL != "" {
+		client.loginRetries = 1
+		client.loginDelay = 0
+	}
+	return client
 }
 
 // sandboxLoginToken returns the sandbox API login token from __meta__.
@@ -312,9 +319,16 @@ func sandboxStop(rc *RunContext) error {
 }
 
 // pollSandboxRequest polls a sandbox API async request until it completes.
+// It uses pollInterval between attempts, with up to maxAttempts tries.
+// When pollInterval is 0 (e.g. in tests), it polls without sleeping.
 func pollSandboxRequest(client *SandboxAPIClient, accessToken, requestID string) error {
 	maxAttempts := 120 // ~10 minutes at 5s intervals
 	pollInterval := 5 * time.Second
+	if client.loginDelay == 0 {
+		// Test mode: don't sleep between polls.
+		pollInterval = 0
+		maxAttempts = 5
+	}
 
 	for i := 0; i < maxAttempts; i++ {
 		if i > 0 {

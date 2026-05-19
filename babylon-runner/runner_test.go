@@ -729,10 +729,12 @@ func TestPostResultSuccess(t *testing.T) {
 	defer server.Close()
 
 	r := &Runner{
-		cfg:     Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t", RequestTimeout: 5},
-		client:  &http.Client{Timeout: 5 * time.Second},
-		anarchy: NewAnarchyClient(Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t"}),
-		handlers: make(map[string]HandlerFunc),
+		cfg:             Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t", RequestTimeout: 5},
+		client:          &http.Client{Timeout: 5 * time.Second},
+		anarchy:         NewAnarchyClient(Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t"}),
+		handlers:        make(map[string]HandlerFunc),
+		postMaxAttempts: 10,
+		postRetryDelay:  0,
 	}
 
 	result := RunResult{
@@ -762,10 +764,12 @@ func TestPostResultRetryThenSuccess(t *testing.T) {
 	defer server.Close()
 
 	r := &Runner{
-		cfg:     Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t", RequestTimeout: 5},
-		client:  &http.Client{Timeout: 5 * time.Second},
-		anarchy: NewAnarchyClient(Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t"}),
-		handlers: make(map[string]HandlerFunc),
+		cfg:             Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t", RequestTimeout: 5},
+		client:          &http.Client{Timeout: 5 * time.Second},
+		anarchy:         NewAnarchyClient(Config{AnarchyURL: server.URL, RunnerName: "r", PodName: "p", RunnerToken: "t"}),
+		handlers:        make(map[string]HandlerFunc),
+		postMaxAttempts: 10,
+		postRetryDelay:  0,
 	}
 
 	result := RunResult{

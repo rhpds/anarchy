@@ -17,15 +17,19 @@ const DefaultSandboxAPIURL = "http://sandbox-api.babylon-sandbox-api.svc.cluster
 // SandboxAPIClient communicates with the Sandbox API to manage
 // placements (book, start, stop, release) and authentication.
 type SandboxAPIClient struct {
-	baseURL string
-	client  *http.Client
+	baseURL       string
+	client        *http.Client
+	loginRetries  int
+	loginDelay    time.Duration
 }
 
 // NewSandboxAPIClient creates a SandboxAPIClient with the given base URL.
 func NewSandboxAPIClient(baseURL string) *SandboxAPIClient {
 	return &SandboxAPIClient{
-		baseURL: baseURL,
-		client:  &http.Client{Timeout: 30 * time.Second},
+		baseURL:      baseURL,
+		client:       &http.Client{Timeout: 30 * time.Second},
+		loginRetries: 40,
+		loginDelay:   5 * time.Second,
 	}
 }
 
@@ -35,8 +39,8 @@ func NewSandboxAPIClient(baseURL string) *SandboxAPIClient {
 func (s *SandboxAPIClient) Login(loginToken string) (string, error) {
 	url := fmt.Sprintf("%s/api/v1/login", s.baseURL)
 
-	maxAttempts := 40
-	retryDelay := 5 * time.Second
+	maxAttempts := s.loginRetries
+	retryDelay := s.loginDelay
 
 	var lastErr error
 	for attempt := 0; attempt < maxAttempts; attempt++ {
