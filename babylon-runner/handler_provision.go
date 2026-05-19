@@ -269,6 +269,47 @@ func handleProvisionFailed(rc *RunContext) error {
 	return nil
 }
 
+// handleProvisionCanceled marks a provision as canceled.
+func handleProvisionCanceled(rc *RunContext) error {
+	ts := nowUTC()
+
+	if err := rc.SubjectUpdate(SubjectPatch{
+		Patch: PatchBody{
+			Metadata: &PatchMetadata{
+				Labels: map[string]string{
+					"state": "provision-canceled",
+				},
+			},
+			Spec: &PatchSpec{
+				Vars: map[string]interface{}{
+					"current_state": "provision-canceled",
+					"healthy":       false,
+				},
+			},
+			Status: map[string]interface{}{
+				"actions": map[string]interface{}{
+					"provision": map[string]interface{}{
+						"completeTimestamp": ts,
+						"status":           "canceled",
+					},
+				},
+				"towerJobs": map[string]interface{}{
+					"provision": map[string]interface{}{
+						"completeTimestamp": ts,
+						"jobStatus":        "canceled",
+					},
+				},
+			},
+			SkipUpdateProcessing: true,
+		},
+	}); err != nil {
+		return err
+	}
+
+	rc.FinishAction("canceled")
+	return nil
+}
+
 // checkProvisionQueue checks whether a queued provision can proceed
 // by polling the sandbox API placement status.
 func checkProvisionQueue(rc *RunContext) error {

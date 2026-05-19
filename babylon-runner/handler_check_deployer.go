@@ -102,10 +102,14 @@ func continueWithRetry(rc *RunContext) error {
 func handleDeployerJobFailure(rc *RunContext, action, status string) error {
 	switch action {
 	case "provision":
-		if status == "failed" {
+		switch status {
+		case "canceled":
+			return handleProvisionCanceled(rc)
+		case "failed":
 			return handleProvisionFailed(rc)
+		default:
+			return handleProvisionError(rc)
 		}
-		return handleProvisionError(rc)
 	case "destroy":
 		return handleDestroyFailure(rc, status)
 	case "start":
@@ -145,11 +149,21 @@ func handleDeployerJobSuccess(rc *RunContext, action string, jobStatus map[strin
 	}
 }
 
-// handleDestroyFailure handles destroy job error/failure.
-// Always retries with backoff — catch_all in handleDestroy handles final cleanup.
+// handleDestroyFailure handles destroy job error/failure/canceled.
+// Always retries — catch_all in handleDestroy handles final cleanup.
+// Canceled uses fixed 1m retry; error/failed use dynamic backoff.
+// Error/failed set healthy=false; canceled does not.
 func handleDestroyFailure(rc *RunContext, status string) error {
 	ts := nowUTC()
 	state := fmt.Sprintf("destroy-%s", status)
+
+	specVars := map[string]interface{}{
+		"current_state": state,
+	}
+	// Only error/failed set healthy=false (not canceled).
+	if status != "canceled" {
+		specVars["healthy"] = false
+	}
 
 	if err := rc.SubjectUpdate(SubjectPatch{
 		Patch: PatchBody{
@@ -157,9 +171,7 @@ func handleDestroyFailure(rc *RunContext, status string) error {
 				Labels: map[string]string{"state": state},
 			},
 			Spec: &PatchSpec{
-				Vars: map[string]interface{}{
-					"current_state": state,
-				},
+				Vars: specVars,
 			},
 			Status: map[string]interface{}{
 				"actions": map[string]interface{}{
@@ -181,6 +193,10 @@ func handleDestroyFailure(rc *RunContext, status string) error {
 		return err
 	}
 
+	// Canceled uses fixed 1m retry; error/failed use dynamic backoff.
+	if status == "canceled" {
+		return rc.ContinueAction("1m")
+	}
 	return continueWithRetry(rc)
 }
 
@@ -234,6 +250,10 @@ func handleStartFailure(rc *RunContext, status string) error {
 
 	desiredState := rc.DesiredState()
 	if desiredState == "started" && !rc.IsBeingDeleted() {
+		// Canceled uses fixed 1m retry; error/failed use dynamic backoff.
+		if status == "canceled" {
+			return rc.ContinueAction("1m")
+		}
 		return continueWithRetry(rc)
 	}
 	if desiredState == "stopped" && !rc.IsBeingDeleted() {
@@ -316,6 +336,10 @@ func handleStopFailure(rc *RunContext, status string) error {
 
 	desiredState := rc.DesiredState()
 	if desiredState == "stopped" && !rc.IsBeingDeleted() {
+		// Canceled uses fixed 1m retry; error/failed use dynamic backoff.
+		if status == "canceled" {
+			return rc.ContinueAction("1m")
+		}
 		return continueWithRetry(rc)
 	}
 	if desiredState == "started" && !rc.IsBeingDeleted() {
@@ -328,8 +352,9 @@ func handleStopFailure(rc *RunContext, status string) error {
 	return nil
 }
 
-// handleStatusFailure handles status check error/failure.
+// handleStatusFailure handles status check error/failure/canceled.
 // Sets check_status_state (not current_state), finishes immediately.
+// Note: canceled finishes as "failed" (matching Ansible behavior).
 func handleStatusFailure(rc *RunContext, status string) error {
 	ts := nowUTC()
 
@@ -360,7 +385,12 @@ func handleStatusFailure(rc *RunContext, status string) error {
 		return err
 	}
 
-	rc.FinishAction(status)
+	// Ansible finishes canceled status actions as "failed".
+	finishStatus := status
+	if status == "canceled" {
+		finishStatus = "failed"
+	}
+	rc.FinishAction(finishStatus)
 	return nil
 }
 
@@ -402,6 +432,10 @@ func handleUpdateFailure(rc *RunContext, status string) error {
 	}
 
 	if !rc.IsBeingDeleted() {
+		// Canceled uses fixed 1m retry; error/failed use dynamic backoff.
+		if status == "canceled" {
+			return rc.ContinueAction("1m")
+		}
 		return continueWithRetry(rc)
 	}
 	rc.FinishAction(status)
