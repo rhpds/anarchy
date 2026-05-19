@@ -30,34 +30,20 @@ func handleDestroy(rc *RunContext) error {
 	}
 
 	// Sandbox API destroy catch-all: cleanup and delete if in error state.
-	// Source: __meta__.sandbox_api.actions.destroy.catch_all (default true)
-	if rc.SandboxAPIInUse() {
-		catchAll := true
-		meta := rc.Meta()
-		if meta != nil {
-			sbAPI := getNestedMap(meta, "sandbox_api", "actions", "destroy")
-			if sbAPI != nil {
-				if v, ok := sbAPI["catch_all"].(bool); ok {
-					catchAll = v
-				}
-			}
+	if rc.SandboxAPIInUse() && sandboxDestroyCatchAll(rc) {
+		errorStates := map[string]bool{
+			"destroy-error":    true,
+			"destroy-failed":   true,
+			"destroy-canceled": true,
 		}
-
-		if catchAll {
-			errorStates := map[string]bool{
-				"destroy-error":    true,
-				"destroy-failed":   true,
-				"destroy-canceled": true,
+		if errorStates[currentState] || rc.DeployerDisabled("destroy") {
+			log.Printf("handleDestroy: destroy catch-all triggered for subject=%s state=%s", rc.SubjectName, currentState)
+			if err := sandboxCleanup(rc); err != nil {
+				log.Printf("handleDestroy: sandbox cleanup error for subject=%s: %v", rc.SubjectName, err)
 			}
-			if errorStates[currentState] || rc.DeployerDisabled("destroy") {
-				log.Printf("handleDestroy: destroy catch-all triggered for subject=%s state=%s", rc.SubjectName, currentState)
-				if err := sandboxCleanup(rc); err != nil {
-					log.Printf("handleDestroy: sandbox cleanup error for subject=%s: %v", rc.SubjectName, err)
-				}
-				rc.DeleteSubject(true)
-				rc.FinishAction("successful")
-				return nil
-			}
+			rc.DeleteSubject(true)
+			rc.FinishAction("successful")
+			return nil
 		}
 	}
 

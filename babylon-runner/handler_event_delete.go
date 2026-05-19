@@ -62,11 +62,28 @@ func handleEventDeleteWithDestroy(rc *RunContext) error {
 	})
 }
 
+// sandboxDestroyCatchAll returns whether catch_all is enabled for destroy.
+// Source: __meta__.sandbox_api.actions.destroy.catch_all (default true)
+func sandboxDestroyCatchAll(rc *RunContext) bool {
+	meta := rc.Meta()
+	if meta == nil {
+		return true
+	}
+	sbAPI := getNestedMap(meta, "sandbox_api", "actions", "destroy")
+	if sbAPI == nil {
+		return true
+	}
+	if v, ok := sbAPI["catch_all"].(bool); ok {
+		return v
+	}
+	return true
+}
+
 // handleEventDeleteWithoutDestroy marks the subject as destroyed and
 // finishes the action immediately.
 func handleEventDeleteWithoutDestroy(rc *RunContext) error {
-	// Sandbox cleanup: release placement.
-	if rc.SandboxAPIInUse() && rc.UUID() != "" {
+	// Sandbox cleanup: release placement if catch_all is enabled.
+	if rc.SandboxAPIInUse() && sandboxDestroyCatchAll(rc) && rc.UUID() != "" {
 		if err := sandboxCleanup(rc); err != nil {
 			log.Printf("handleEventDeleteWithoutDestroy: sandbox cleanup error: %v", err)
 		}
