@@ -94,7 +94,8 @@ func newTestRunContext(t *testing.T, server *httptest.Server) *RunContext {
 }
 
 // newTestTowerServer creates a mock Tower server that handles the full
-// LaunchJob workflow (token, org, inventory, project, template, launch).
+// LaunchJob workflow (token, org, inventory, project, template, launch,
+// credentials, execution environments, instance groups, resource search).
 // Returns the server URL.
 func newTestTowerServer(t *testing.T) *httptest.Server {
 	t.Helper()
@@ -109,12 +110,24 @@ func newTestTowerServer(t *testing.T) *httptest.Server {
 			})
 		case "DELETE":
 			w.WriteHeader(http.StatusNoContent)
+		case "GET":
+			// Search requests return empty results (resource not found),
+			// causing ensureResource to fall through to create.
+			// Exception: job status requests (no query params).
+			if r.URL.RawQuery != "" {
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"count":   0,
+					"results": []interface{}{},
+				})
+			} else {
+				// GET job status (for checkDeployerJob)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"id":     float64(42),
+					"status": "successful",
+				})
+			}
 		default:
-			// GET job status (for checkDeployerJob)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"id":     float64(42),
-				"status": "successful",
-			})
+			w.WriteHeader(http.StatusOK)
 		}
 	}))
 }
@@ -264,6 +277,123 @@ func TestHandleEventUpdateStartStop(t *testing.T) {
 	}
 }
 
+// TestHandleEventUpdateLegacyStatusPath tests the legacy status check path
+// where check_status_state is set to "pending" with no timestamp.
+func TestHandleEventUpdateLegacyStatusPath(t *testing.T) {
+	server, calls := newTestAnarchyServer(t)
+	defer server.Close()
+
+	rc := newTestRunContext(t, server)
+
+	// Add status action to governor.
+	setNested(rc.Payload.Governor, map[string]interface{}{}, "spec", "actions", "status")
+
+	// Set same state/job_vars so no start/stop/update action triggers.
+	setNested(rc.Payload.Subject, "started", "spec", "vars", "current_state")
+	setNested(rc.Payload.Subject, "started", "spec", "vars", "desired_state")
+	jv := map[string]interface{}{"guid": "abc"}
+	setNested(rc.Payload.Subject, jv, "spec", "vars", "job_vars")
+	setNested(rc.Payload.Subject, jv, "status", "previous_state", "job_vars")
+
+	// Legacy path: check_status_state = "pending", no timestamp.
+	setNested(rc.Payload.Subject, "pending", "spec", "vars", "check_status_state")
+
+	if err := handleEventUpdate(rc); err != nil {
+		t.Fatalf("handleEventUpdate returned error: %v", err)
+	}
+
+	// Should have 2 calls: PATCH to set check_status_state, POST to schedule status.
+	if len(*calls) != 2 {
+		t.Fatalf("expected 2 calls, got %d", len(*calls))
+	}
+
+	// First call: PATCH check_status_state to "pending".
+	c0 := (*calls)[0]
+	if c0.Method != http.MethodPatch {
+		t.Errorf("call[0] method = %s, want PATCH", c0.Method)
+	}
+	patch := c0.Body["patch"].(map[string]interface{})
+	spec := patch["spec"].(map[string]interface{})
+	vars := spec["vars"].(map[string]interface{})
+	if vars["check_status_state"] != "pending" {
+		t.Errorf("check_status_state = %v, want pending", vars["check_status_state"])
+	}
+
+	// Second call: POST schedule status action.
+	c1 := (*calls)[1]
+	if c1.Method != http.MethodPost {
+		t.Errorf("call[1] method = %s, want POST", c1.Method)
+	}
+	if c1.Body["action"] != "status" {
+		t.Errorf("action = %v, want status", c1.Body["action"])
+	}
+}
+
+// TestHandleEventUpdateTimestampStatusPath tests the timestamp-based status check path.
+func TestHandleEventUpdateTimestampStatusPath(t *testing.T) {
+	server, calls := newTestAnarchyServer(t)
+	defer server.Close()
+
+	rc := newTestRunContext(t, server)
+
+	// Add status action to governor.
+	setNested(rc.Payload.Governor, map[string]interface{}{}, "spec", "actions", "status")
+
+	// Set same state/job_vars so no start/stop/update action triggers.
+	setNested(rc.Payload.Subject, "started", "spec", "vars", "current_state")
+	setNested(rc.Payload.Subject, "started", "spec", "vars", "desired_state")
+	jv := map[string]interface{}{"guid": "abc"}
+	setNested(rc.Payload.Subject, jv, "spec", "vars", "job_vars")
+	setNested(rc.Payload.Subject, jv, "status", "previous_state", "job_vars")
+
+	// Timestamp path: new timestamp, state empty or "successful".
+	setNested(rc.Payload.Subject, "2024-01-01T00:00:00Z", "spec", "vars", "check_status_request_timestamp")
+	setNested(rc.Payload.Subject, "2023-12-31T00:00:00Z", "status", "previous_state", "check_status_request_timestamp")
+
+	if err := handleEventUpdate(rc); err != nil {
+		t.Fatalf("handleEventUpdate returned error: %v", err)
+	}
+
+	// Should have 2 calls: PATCH + POST schedule status.
+	if len(*calls) != 2 {
+		t.Fatalf("expected 2 calls, got %d", len(*calls))
+	}
+
+	c1 := (*calls)[1]
+	if c1.Body["action"] != "status" {
+		t.Errorf("action = %v, want status", c1.Body["action"])
+	}
+}
+
+// TestHandleEventUpdateNoStatusWithoutGovernorAction tests that status
+// is not scheduled when governor has no status action.
+func TestHandleEventUpdateNoStatusWithoutGovernorAction(t *testing.T) {
+	server, calls := newTestAnarchyServer(t)
+	defer server.Close()
+
+	rc := newTestRunContext(t, server)
+
+	// No status action in governor (default newTestRunContext has none).
+	// Set same state/job_vars so no start/stop/update action triggers.
+	setNested(rc.Payload.Subject, "started", "spec", "vars", "current_state")
+	setNested(rc.Payload.Subject, "started", "spec", "vars", "desired_state")
+	jv := map[string]interface{}{"guid": "abc"}
+	setNested(rc.Payload.Subject, jv, "spec", "vars", "job_vars")
+	setNested(rc.Payload.Subject, jv, "status", "previous_state", "job_vars")
+
+	// Legacy path: check_status_state = "pending" — but no governor status action.
+	setNested(rc.Payload.Subject, "pending", "spec", "vars", "check_status_state")
+
+	if err := handleEventUpdate(rc); err != nil {
+		t.Fatalf("handleEventUpdate returned error: %v", err)
+	}
+
+	// Should have 0 calls — no status action in governor.
+	if len(*calls) != 0 {
+		t.Errorf("expected 0 calls, got %d", len(*calls))
+	}
+}
+
 func TestHandleEventUpdateNoChange(t *testing.T) {
 	server, calls := newTestAnarchyServer(t)
 	defer server.Close()
@@ -372,6 +502,54 @@ func TestHandleEventDeleteWithoutDestroy(t *testing.T) {
 	}
 
 	// FinishAction should have been called.
+	if !rc.finished {
+		t.Error("expected FinishAction to be called")
+	}
+}
+
+// TestHandleEventDeleteDeployerDisabled tests that delete goes to
+// handleEventDeleteWithoutDestroy when deployer is disabled, even if
+// a provision tower job exists and destroy action is defined.
+func TestHandleEventDeleteDeployerDisabled(t *testing.T) {
+	server, calls := newTestAnarchyServer(t)
+	defer server.Close()
+
+	rc := newTestRunContext(t, server)
+
+	// Set a provision tower job.
+	setNested(rc.Payload.Subject, map[string]interface{}{
+		"provision": map[string]interface{}{
+			"deployerJob": "job-123",
+		},
+	}, "status", "towerJobs")
+
+	// Disable deployer for destroy.
+	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "deployer", "actions", "destroy", "disable")
+
+	if err := handleEventDelete(rc); err != nil {
+		t.Fatalf("handleEventDelete returned error: %v", err)
+	}
+
+	// Should go to handleEventDeleteWithoutDestroy: 1 PATCH call.
+	if len(*calls) != 1 {
+		t.Fatalf("expected 1 call (PATCH), got %d", len(*calls))
+	}
+
+	c0 := (*calls)[0]
+	if c0.Method != http.MethodPatch {
+		t.Errorf("call[0] method = %s, want PATCH", c0.Method)
+	}
+	patch := c0.Body["patch"].(map[string]interface{})
+	spec := patch["spec"].(map[string]interface{})
+	vars := spec["vars"].(map[string]interface{})
+	if vars["current_state"] != "destroy-complete" {
+		t.Errorf("current_state = %v, want destroy-complete", vars["current_state"])
+	}
+
+	// DeleteSubject and FinishAction should have been called.
+	if rc.deleteSubjectDirective == nil {
+		t.Error("expected DeleteSubject to be called")
+	}
 	if !rc.finished {
 		t.Error("expected FinishAction to be called")
 	}
@@ -646,6 +824,342 @@ func TestCheckDeployerJobStillRunning(t *testing.T) {
 	// Should NOT have called FinishAction (job still running)
 	if rc.finished {
 		t.Error("expected FinishAction NOT to be called while job is running")
+	}
+}
+
+// --- handleEventUpdate: start path ---
+
+func TestHandleEventUpdateStartAction(t *testing.T) {
+	server, calls := newTestAnarchyServer(t)
+	defer server.Close()
+
+	rc := newTestRunContext(t, server)
+
+	// Subject is stopped, desired is started.
+	setNested(rc.Payload.Subject, "stopped", "spec", "vars", "current_state")
+	setNested(rc.Payload.Subject, "started", "spec", "vars", "desired_state")
+
+	// Set matching job_vars so only start/stop logic triggers.
+	jv := map[string]interface{}{"guid": "abc"}
+	setNested(rc.Payload.Subject, jv, "spec", "vars", "job_vars")
+	setNested(rc.Payload.Subject, jv, "status", "previous_state", "job_vars")
+
+	if err := handleEventUpdate(rc); err != nil {
+		t.Fatalf("handleEventUpdate returned error: %v", err)
+	}
+
+	if len(*calls) != 2 {
+		t.Fatalf("expected 2 calls, got %d", len(*calls))
+	}
+
+	// First call: PATCH with start-pending.
+	c0 := (*calls)[0]
+	if c0.Method != http.MethodPatch {
+		t.Errorf("call[0] method = %s, want PATCH", c0.Method)
+	}
+	patch := c0.Body["patch"].(map[string]interface{})
+	spec := patch["spec"].(map[string]interface{})
+	vars := spec["vars"].(map[string]interface{})
+	if vars["current_state"] != "start-pending" {
+		t.Errorf("current_state = %v, want start-pending", vars["current_state"])
+	}
+
+	// Verify label.
+	metadata := patch["metadata"].(map[string]interface{})
+	labels := metadata["labels"].(map[string]interface{})
+	if labels["state"] != "start-pending" {
+		t.Errorf("state label = %v, want start-pending", labels["state"])
+	}
+
+	// Second call: POST schedule start action.
+	c1 := (*calls)[1]
+	if c1.Method != http.MethodPost {
+		t.Errorf("call[1] method = %s, want POST", c1.Method)
+	}
+	if c1.Body["action"] != "start" {
+		t.Errorf("action = %v, want start", c1.Body["action"])
+	}
+
+	// Verify cancel list includes start and stop.
+	cancelRaw, ok := c1.Body["cancel"].([]interface{})
+	if !ok {
+		t.Fatal("expected cancel to be a slice")
+	}
+	cancelSet := make(map[string]bool)
+	for _, v := range cancelRaw {
+		cancelSet[v.(string)] = true
+	}
+	if !cancelSet["start"] || !cancelSet["stop"] {
+		t.Errorf("cancel = %v, want [start, stop]", cancelRaw)
+	}
+}
+
+// --- handleEventUpdate: update action path (job_vars changed) ---
+
+func TestHandleEventUpdateJobVarsChanged(t *testing.T) {
+	server, calls := newTestAnarchyServer(t)
+	defer server.Close()
+
+	rc := newTestRunContext(t, server)
+
+	// Same state, but different job_vars → update action.
+	setNested(rc.Payload.Subject, "started", "spec", "vars", "current_state")
+	setNested(rc.Payload.Subject, "started", "spec", "vars", "desired_state")
+
+	setNested(rc.Payload.Subject, map[string]interface{}{"guid": "abc", "new_param": "value"}, "spec", "vars", "job_vars")
+	setNested(rc.Payload.Subject, map[string]interface{}{"guid": "abc"}, "status", "previous_state", "job_vars")
+
+	if err := handleEventUpdate(rc); err != nil {
+		t.Fatalf("handleEventUpdate returned error: %v", err)
+	}
+
+	if len(*calls) != 2 {
+		t.Fatalf("expected 2 calls, got %d", len(*calls))
+	}
+
+	// First call: PATCH with update-pending.
+	c0 := (*calls)[0]
+	patch := c0.Body["patch"].(map[string]interface{})
+	spec := patch["spec"].(map[string]interface{})
+	vars := spec["vars"].(map[string]interface{})
+	if vars["current_state"] != "update-pending" {
+		t.Errorf("current_state = %v, want update-pending", vars["current_state"])
+	}
+
+	// Second call: POST schedule update action.
+	c1 := (*calls)[1]
+	if c1.Body["action"] != "update" {
+		t.Errorf("action = %v, want update", c1.Body["action"])
+	}
+
+	// Verify cancel list for update action.
+	cancelRaw, ok := c1.Body["cancel"].([]interface{})
+	if !ok {
+		t.Fatal("expected cancel to be a slice")
+	}
+	cancelSet := make(map[string]bool)
+	for _, v := range cancelRaw {
+		cancelSet[v.(string)] = true
+	}
+	if !cancelSet["start"] || !cancelSet["stop"] {
+		t.Errorf("cancel = %v, want [start, stop]", cancelRaw)
+	}
+}
+
+// --- checkDeployerJob error recovery tests ---
+
+func TestCheckDeployerJobNoTowerJobInfo(t *testing.T) {
+	anarchyServer, calls := newTestAnarchyServer(t)
+	defer anarchyServer.Close()
+
+	rc := newTestRunContext(t, anarchyServer)
+	rc.ActionName = "provision"
+	// No towerJobs in status → should ContinueAction 5m.
+
+	err := checkDeployerJob(rc, "provision")
+	if err != nil {
+		t.Fatalf("checkDeployerJob error: %v", err)
+	}
+
+	// Should schedule continuation (ContinueAction 5m).
+	if len(*calls) != 1 {
+		t.Fatalf("expected 1 call (POST continue), got %d", len(*calls))
+	}
+	c0 := (*calls)[0]
+	if c0.Method != http.MethodPost {
+		t.Errorf("call[0] method = %s, want POST", c0.Method)
+	}
+	if c0.Body["after"] != "5m" {
+		t.Errorf("after = %v, want 5m", c0.Body["after"])
+	}
+
+	if rc.finished {
+		t.Error("expected FinishAction NOT to be called")
+	}
+}
+
+func TestCheckDeployerJobMissingDeployerJobField(t *testing.T) {
+	anarchyServer, calls := newTestAnarchyServer(t)
+	defer anarchyServer.Close()
+
+	rc := newTestRunContext(t, anarchyServer)
+	rc.ActionName = "provision"
+	// towerJobs.provision exists but has no deployerJob field.
+	setNested(rc.Payload.Subject, map[string]interface{}{
+		"provision": map[string]interface{}{
+			"towerHost": "tower.example.com",
+		},
+	}, "status", "towerJobs")
+
+	err := checkDeployerJob(rc, "provision")
+	if err != nil {
+		t.Fatalf("checkDeployerJob error: %v", err)
+	}
+
+	if len(*calls) != 1 {
+		t.Fatalf("expected 1 call (POST continue), got %d", len(*calls))
+	}
+	if (*calls)[0].Body["after"] != "5m" {
+		t.Errorf("after = %v, want 5m", (*calls)[0].Body["after"])
+	}
+}
+
+func TestCheckDeployerJobMissingTowerHost(t *testing.T) {
+	anarchyServer, calls := newTestAnarchyServer(t)
+	defer anarchyServer.Close()
+
+	rc := newTestRunContext(t, anarchyServer)
+	rc.ActionName = "provision"
+	// towerJobs.provision has deployerJob but no towerHost.
+	setNested(rc.Payload.Subject, map[string]interface{}{
+		"provision": map[string]interface{}{
+			"deployerJob": float64(42),
+		},
+	}, "status", "towerJobs")
+
+	err := checkDeployerJob(rc, "provision")
+	if err != nil {
+		t.Fatalf("checkDeployerJob error: %v", err)
+	}
+
+	if len(*calls) != 1 {
+		t.Fatalf("expected 1 call (POST continue), got %d", len(*calls))
+	}
+	if (*calls)[0].Body["after"] != "5m" {
+		t.Errorf("after = %v, want 5m", (*calls)[0].Body["after"])
+	}
+}
+
+func TestCheckDeployerJobCanceled(t *testing.T) {
+	towerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "POST" && r.URL.Path == "/api/v2/tokens/":
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(1), "token": "test-token"})
+		case r.Method == "DELETE":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(42), "status": "canceled"})
+		}
+	}))
+	defer towerServer.Close()
+
+	anarchyServer, calls := newTestAnarchyServer(t)
+	defer anarchyServer.Close()
+
+	rc := newTestRunContext(t, anarchyServer)
+	rc.ActionName = "provision"
+	rc.TowerBaseURL = towerServer.URL
+	setNested(rc.Payload.Subject, map[string]interface{}{
+		"provision": map[string]interface{}{
+			"deployerJob": float64(42),
+			"towerHost":   "tower.example.com",
+		},
+	}, "status", "towerJobs")
+
+	err := checkDeployerJob(rc, "provision")
+	if err != nil {
+		t.Fatalf("checkDeployerJob error: %v", err)
+	}
+
+	// Should route to handleProvisionCanceled.
+	if len(*calls) < 1 {
+		t.Fatalf("expected at least 1 call, got %d", len(*calls))
+	}
+
+	// Verify state set to provision-canceled.
+	c0 := (*calls)[0]
+	patch := c0.Body["patch"].(map[string]interface{})
+	metadata := patch["metadata"].(map[string]interface{})
+	labels := metadata["labels"].(map[string]interface{})
+	if labels["state"] != "provision-canceled" {
+		t.Errorf("state label = %v, want provision-canceled", labels["state"])
+	}
+
+	if !rc.finished {
+		t.Error("expected FinishAction to be called")
+	}
+	if rc.finishActionDirective == nil || rc.finishActionDirective.State != "canceled" {
+		t.Errorf("finishActionDirective = %v, want canceled", rc.finishActionDirective)
+	}
+}
+
+func TestCheckDeployerJobError(t *testing.T) {
+	towerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "POST" && r.URL.Path == "/api/v2/tokens/":
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(1), "token": "test-token"})
+		case r.Method == "DELETE":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(42), "status": "error"})
+		}
+	}))
+	defer towerServer.Close()
+
+	anarchyServer, calls := newTestAnarchyServer(t)
+	defer anarchyServer.Close()
+
+	rc := newTestRunContext(t, anarchyServer)
+	rc.ActionName = "provision"
+	rc.TowerBaseURL = towerServer.URL
+	setNested(rc.Payload.Subject, map[string]interface{}{
+		"provision": map[string]interface{}{
+			"deployerJob": float64(42),
+			"towerHost":   "tower.example.com",
+		},
+	}, "status", "towerJobs")
+
+	err := checkDeployerJob(rc, "provision")
+	if err != nil {
+		t.Fatalf("checkDeployerJob error: %v", err)
+	}
+
+	// Should route to handleProvisionError.
+	if len(*calls) < 1 {
+		t.Fatalf("expected at least 1 call, got %d", len(*calls))
+	}
+
+	c0 := (*calls)[0]
+	patch := c0.Body["patch"].(map[string]interface{})
+	metadata := patch["metadata"].(map[string]interface{})
+	labels := metadata["labels"].(map[string]interface{})
+	if labels["state"] != "provision-error" {
+		t.Errorf("state label = %v, want provision-error", labels["state"])
+	}
+
+	if !rc.finished {
+		t.Error("expected FinishAction to be called")
+	}
+	if rc.finishActionDirective == nil || rc.finishActionDirective.State != "error" {
+		t.Errorf("finishActionDirective = %v, want error", rc.finishActionDirective)
+	}
+}
+
+// --- handleDestroy edge cases ---
+
+func TestHandleDestroyDeployerDisabledNoCatchAll(t *testing.T) {
+	server, _ := newTestAnarchyServer(t)
+	defer server.Close()
+
+	rc := newTestRunContext(t, server)
+
+	// Deployer disabled, but catch_all is false and no sandbox → should do nothing.
+	setNested(rc.Payload.Subject, "destroy-pending", "spec", "vars", "current_state")
+	setNested(rc.Payload.Governor, true, "spec", "vars", "__meta__", "deployer", "actions", "destroy", "disable")
+	// No sandbox API in use → catch_all path doesn't trigger.
+
+	if err := handleDestroy(rc); err != nil {
+		t.Fatalf("handleDestroy returned error: %v", err)
+	}
+
+	// Deployer disabled → not in destroying → doesn't run destroy.
+	// Not in error state → catch_all doesn't trigger.
+	// Falls through to return nil.
+	if rc.finished {
+		t.Error("expected FinishAction NOT to be called (deployer disabled, no catch_all)")
+	}
+	if rc.deleteSubjectDirective != nil {
+		t.Error("expected DeleteSubject NOT to be called")
 	}
 }
 

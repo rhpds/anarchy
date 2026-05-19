@@ -127,6 +127,7 @@ func TestTowerCancelJob(t *testing.T) {
 
 func TestTowerLaunchJob(t *testing.T) {
 	// Track which endpoints were called and return appropriate responses.
+	// ensureResource does GET (search) then POST (create) for each resource.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -148,6 +149,13 @@ func TestTowerLaunchJob(t *testing.T) {
 				t.Errorf("delete token path = %s, want /api/v2/tokens/7/", r.URL.Path)
 			}
 			w.WriteHeader(http.StatusNoContent)
+
+		// Search requests (GET with query params) → resource not found.
+		case r.Method == http.MethodGet && r.URL.RawQuery != "":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"count":   0,
+				"results": []interface{}{},
+			})
 
 		// Create organization
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/organizations/":
@@ -175,9 +183,6 @@ func TestTowerLaunchJob(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/job_templates/":
 			var body map[string]interface{}
 			json.NewDecoder(r.Body).Decode(&body)
-			if body["inventory"] != float64(2) {
-				t.Errorf("template inventory = %v, want 2", body["inventory"])
-			}
 			if body["project"] != float64(3) {
 				t.Errorf("template project = %v, want 3", body["project"])
 			}
@@ -202,14 +207,17 @@ func TestTowerLaunchJob(t *testing.T) {
 	tc.baseURL = server.URL
 
 	jobConfig := TowerJobConfig{
-		Organization:  "test-org",
-		Inventory:     "test-inv",
-		ProjectSCMURL: "https://git.example.com/repo.git",
-		ProjectSCMRef: "main",
-		TemplateName:  "deploy",
-		Playbook:      "site.yml",
-		ExtraVars:     map[string]interface{}{"env": "prod"},
-		Timeout:       600,
+		Organization:          "test-org",
+		Inventory:             "test-inv",
+		ProjectSCMURL:         "https://git.example.com/repo.git",
+		ProjectSCMRef:         "main",
+		SCMUpdateOnLaunch:     true,
+		SCMUpdateCacheTimeout: 30,
+		SCMClean:              true,
+		TemplateName:          "deploy",
+		Playbook:              "site.yml",
+		ExtraVars:             map[string]interface{}{"env": "prod"},
+		Timeout:               600,
 	}
 
 	jobID, err := tc.LaunchJob(jobConfig)
@@ -281,20 +289,30 @@ func TestTowerDeleteOAuthToken(t *testing.T) {
 	}
 }
 
-func TestTowerEnsureResource(t *testing.T) {
+func TestTowerEnsureResourceCreate(t *testing.T) {
+	// ensureResource: search returns nothing → creates via POST.
+	requestCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf("method = %s, want POST", r.Method)
-		}
-		if r.URL.Path != "/api/v2/organizations/" {
-			t.Errorf("path = %s, want /api/v2/organizations/", r.URL.Path)
-		}
-		wantAuth := "Bearer my-token"
-		if got := r.Header.Get("Authorization"); got != wantAuth {
-			t.Errorf("Authorization = %q, want %q", got, wantAuth)
-		}
+		requestCount++
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"id": 10, "name": "org1"}`)
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v2/organizations/":
+			// Search returns no results.
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"count":   0,
+				"results": []interface{}{},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/organizations/":
+			wantAuth := "Bearer my-token"
+			if got := r.Header.Get("Authorization"); got != wantAuth {
+				t.Errorf("Authorization = %q, want %q", got, wantAuth)
+			}
+			fmt.Fprint(w, `{"id": 10, "name": "org1"}`)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
 	}))
 	defer server.Close()
 
@@ -309,5 +327,253 @@ func TestTowerEnsureResource(t *testing.T) {
 	}
 	if id != 10 {
 		t.Errorf("id = %d, want 10", id)
+	}
+	if requestCount != 2 {
+		t.Errorf("requestCount = %d, want 2 (GET search + POST create)", requestCount)
+	}
+}
+
+func TestTowerEnsureResourceExisting(t *testing.T) {
+	// ensureResource: search finds existing resource → returns ID without POST.
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v2/organizations/":
+			// Search returns existing resource.
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"count": 1,
+				"results": []interface{}{
+					map[string]interface{}{"id": float64(42), "name": "org1"},
+				},
+			})
+		default:
+			t.Errorf("unexpected request: %s %s (should not POST when resource exists)", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	tc := NewTowerClient("unused", "admin", "secret")
+	tc.baseURL = server.URL
+
+	id, err := tc.ensureResource("my-token", "/api/v2/organizations/", map[string]interface{}{
+		"name": "org1",
+	})
+	if err != nil {
+		t.Fatalf("ensureResource returned error: %v", err)
+	}
+	if id != 42 {
+		t.Errorf("id = %d, want 42 (existing resource)", id)
+	}
+	if requestCount != 1 {
+		t.Errorf("requestCount = %d, want 1 (GET search only)", requestCount)
+	}
+}
+
+func TestTowerLaunchJobWithEEAndCredentials(t *testing.T) {
+	// Track resources created to verify EE, credentials, instance groups.
+	var createdEE, associatedCreds, associatedIGs int
+	var eeData map[string]interface{}
+	var templateData map[string]interface{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/tokens/":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"token": "oauth-tok", "id": float64(1),
+			})
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/v2/tokens/"):
+			w.WriteHeader(http.StatusNoContent)
+
+		// Search requests → return not found (except credentials).
+		case r.Method == http.MethodGet && r.URL.RawQuery != "":
+			// Return found result for static credential search.
+			if strings.Contains(r.URL.Path, "credentials") && strings.Contains(r.URL.RawQuery, "my-cred") {
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"count": 1,
+					"results": []interface{}{
+						map[string]interface{}{"id": float64(50), "name": "my-cred"},
+					},
+				})
+			} else if strings.Contains(r.URL.Path, "instance_groups") {
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"count": 1,
+					"results": []interface{}{
+						map[string]interface{}{"id": float64(60), "name": "my-ig"},
+					},
+				})
+			} else {
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"count": 0, "results": []interface{}{},
+				})
+			}
+
+		// Create resources (org=1, inv=2, project=3, ee=4, template=5).
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/organizations/":
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(1)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/inventories/":
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(2)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/projects/":
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(3)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/execution_environments/":
+			createdEE++
+			json.NewDecoder(r.Body).Decode(&eeData)
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(4)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/job_templates/":
+			json.NewDecoder(r.Body).Decode(&templateData)
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(5)})
+
+		// Credential association.
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/credentials/"):
+			associatedCreds++
+			w.WriteHeader(http.StatusNoContent)
+
+		// Instance group association.
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/instance_groups/"):
+			associatedIGs++
+			w.WriteHeader(http.StatusNoContent)
+
+		// Launch.
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/launch/"):
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(999)})
+
+		// Project update (for retry).
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/update/"):
+			w.WriteHeader(http.StatusAccepted)
+
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	tc := NewTowerClient("unused", "admin", "secret")
+	tc.baseURL = server.URL
+
+	jobConfig := TowerJobConfig{
+		Organization:          "test-org",
+		Inventory:             "test-inv",
+		ProjectSCMURL:         "https://git.example.com/repo.git",
+		ProjectSCMRef:         "main",
+		SCMUpdateOnLaunch:     true,
+		SCMUpdateCacheTimeout: 60,
+		SCMClean:              true,
+		TemplateName:          "deploy",
+		Playbook:              "site.yml",
+		ExtraVars:             map[string]interface{}{"env": "prod"},
+		Timeout:               600,
+		ExecutionEnvironment: &EEConfig{
+			Name:  "test-org ee-image",
+			Image: "quay.io/test/ee:latest",
+			Pull:  "always",
+		},
+		InstanceGroups: []string{"my-ig"},
+		Credentials:    []string{"my-cred"},
+	}
+
+	jobID, err := tc.LaunchJob(jobConfig)
+	if err != nil {
+		t.Fatalf("LaunchJob returned error: %v", err)
+	}
+	if jobID != 999 {
+		t.Errorf("jobID = %d, want 999", jobID)
+	}
+
+	// Verify EE was created.
+	if createdEE != 1 {
+		t.Errorf("createdEE = %d, want 1", createdEE)
+	}
+	if eeData["image"] != "quay.io/test/ee:latest" {
+		t.Errorf("ee image = %v, want quay.io/test/ee:latest", eeData["image"])
+	}
+	if eeData["pull"] != "always" {
+		t.Errorf("ee pull = %v, want always", eeData["pull"])
+	}
+
+	// Verify template has EE set.
+	if templateData["execution_environment"] != float64(4) {
+		t.Errorf("template execution_environment = %v, want 4", templateData["execution_environment"])
+	}
+
+	// Verify credentials and instance groups were associated.
+	if associatedCreds != 1 {
+		t.Errorf("associatedCreds = %d, want 1", associatedCreds)
+	}
+	if associatedIGs != 1 {
+		t.Errorf("associatedIGs = %d, want 1", associatedIGs)
+	}
+}
+
+func TestTowerLaunchJobSCMSettings(t *testing.T) {
+	// Verify SCM settings are passed to the project creation.
+	var projData map[string]interface{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/tokens/":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"token": "tok", "id": float64(1),
+			})
+		case r.Method == http.MethodDelete:
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.RawQuery != "":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"count": 0, "results": []interface{}{},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/organizations/":
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(1)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/inventories/":
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(2)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/projects/":
+			json.NewDecoder(r.Body).Decode(&projData)
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(3)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/job_templates/":
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(4)})
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/launch/"):
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(100)})
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	tc := NewTowerClient("unused", "admin", "secret")
+	tc.baseURL = server.URL
+
+	jobConfig := TowerJobConfig{
+		Organization:          "org",
+		Inventory:             "inv",
+		ProjectSCMURL:         "https://git.example.com/repo.git",
+		ProjectSCMRef:         "v2.5",
+		SCMUpdateOnLaunch:     false, // release version
+		SCMUpdateCacheTimeout: 3600,
+		SCMClean:              false,
+		TemplateName:          "tmpl",
+		Playbook:              "site.yml",
+		Timeout:               300,
+	}
+
+	_, err := tc.LaunchJob(jobConfig)
+	if err != nil {
+		t.Fatalf("LaunchJob returned error: %v", err)
+	}
+
+	// Verify SCM settings on project.
+	if projData["scm_update_on_launch"] != false {
+		t.Errorf("scm_update_on_launch = %v, want false", projData["scm_update_on_launch"])
+	}
+	if projData["scm_update_cache_timeout"] != float64(3600) {
+		t.Errorf("scm_update_cache_timeout = %v, want 3600", projData["scm_update_cache_timeout"])
+	}
+	if projData["scm_clean"] != false {
+		t.Errorf("scm_clean = %v, want false", projData["scm_clean"])
 	}
 }

@@ -8,6 +8,8 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"net/url"
+	"strings"
 )
 
 // TowerJobConfig holds the parameters for launching a job on Tower/AAP2.
@@ -21,6 +23,31 @@ type TowerJobConfig struct {
 	Playbook      string
 	ExtraVars     map[string]interface{}
 	Timeout       int
+
+	// SCM settings for the project.
+	SCMUpdateOnLaunch    bool
+	SCMUpdateCacheTimeout int
+	SCMClean             bool
+
+	// Execution environment (AAP2/Controller only).
+	ExecutionEnvironment *EEConfig
+
+	// Instance groups to associate with the job template.
+	InstanceGroups []string
+
+	// Credential names to associate with the job template.
+	Credentials []string
+
+	// Vault credentials to create: vault_id → password.
+	VaultCredentials map[string]string
+}
+
+// EEConfig holds execution environment configuration.
+type EEConfig struct {
+	Name    string
+	Image   string
+	Pull    string
+	Private bool
 }
 
 // TowerClient communicates with a Tower/AAP2 instance via its REST API.
@@ -199,17 +226,55 @@ func (tc *TowerClient) CancelJob(oauthToken string, jobID int) error {
 	return nil
 }
 
-// ensureResource creates a Tower resource by POSTing to the given API path.
+// searchResource searches for a resource by name via the Tower API.
+// Returns the ID of the first match, or 0 if not found.
+func (tc *TowerClient) searchResource(oauthToken, path, name string) (int, error) {
+	params := url.Values{"name": {name}}
+	reqURL := tc.baseURL + path + "?" + params.Encode()
+
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	if err != nil {
+		return 0, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+oauthToken)
+
+	resp, err := tc.client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("GET %s: %w", reqURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return 0, fmt.Errorf("GET %s: status %d", reqURL, resp.StatusCode)
+	}
+
+	var result struct {
+		Count   int                      `json:"count"`
+		Results []map[string]interface{} `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("decode response: %w", err)
+	}
+
+	if result.Count > 0 && len(result.Results) > 0 {
+		if id, ok := result.Results[0]["id"].(float64); ok {
+			return int(id), nil
+		}
+	}
+	return 0, nil
+}
+
+// createResource creates a Tower resource by POSTing to the given API path.
 // It returns the "id" field from the JSON response.
-func (tc *TowerClient) ensureResource(oauthToken, path string, data map[string]interface{}) (int, error) {
-	url := tc.baseURL + path
+func (tc *TowerClient) createResource(oauthToken, path string, data map[string]interface{}) (int, error) {
+	reqURL := tc.baseURL + path
 
 	body, err := json.Marshal(data)
 	if err != nil {
 		return 0, fmt.Errorf("marshal body: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, reqURL, bytes.NewReader(body))
 	if err != nil {
 		return 0, fmt.Errorf("create request: %w", err)
 	}
@@ -218,12 +283,13 @@ func (tc *TowerClient) ensureResource(oauthToken, path string, data map[string]i
 
 	resp, err := tc.client.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("POST %s: %w", url, err)
+		return 0, fmt.Errorf("POST %s: %w", reqURL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return 0, fmt.Errorf("POST %s: status %d", url, resp.StatusCode)
+		respBody, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("POST %s: status %d: %s", reqURL, resp.StatusCode, string(respBody))
 	}
 
 	var result map[string]interface{}
@@ -238,66 +304,234 @@ func (tc *TowerClient) ensureResource(oauthToken, path string, data map[string]i
 	return int(id), nil
 }
 
+// ensureResource finds a resource by name or creates it. Returns the ID.
+// This is idempotent: if the resource already exists, returns its ID
+// without modification (matching awx.awx module behavior).
+func (tc *TowerClient) ensureResource(oauthToken, path string, data map[string]interface{}) (int, error) {
+	name, _ := data["name"].(string)
+	if name != "" {
+		id, err := tc.searchResource(oauthToken, path, name)
+		if err != nil {
+			// Search failed; fall through to create.
+		} else if id > 0 {
+			return id, nil
+		}
+	}
+	return tc.createResource(oauthToken, path, data)
+}
+
+// updateProject triggers a project SCM sync. This is used as a retry
+// mechanism when job template creation or launch fails.
+func (tc *TowerClient) updateProject(oauthToken string, projID int) error {
+	reqURL := fmt.Sprintf("%s/api/v2/projects/%d/update/", tc.baseURL, projID)
+
+	req, err := http.NewRequest(http.MethodPost, reqURL, nil)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+oauthToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := tc.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("POST %s: %w", reqURL, err)
+	}
+	defer resp.Body.Close()
+
+	// 202 Accepted is the normal response for project update.
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("POST %s: status %d", reqURL, resp.StatusCode)
+	}
+	return nil
+}
+
+// associateChild POSTs to a sub-resource endpoint to create an association.
+// Used for job template credentials and instance groups.
+func (tc *TowerClient) associateChild(oauthToken string, parentPath string, parentID int, childEndpoint string, childID int) error {
+	reqURL := fmt.Sprintf("%s%s%d/%s/", tc.baseURL, parentPath, parentID, childEndpoint)
+
+	body, err := json.Marshal(map[string]interface{}{"id": float64(childID)})
+	if err != nil {
+		return fmt.Errorf("marshal body: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, reqURL, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+oauthToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := tc.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("POST %s: %w", reqURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("POST %s: status %d", reqURL, resp.StatusCode)
+	}
+	return nil
+}
+
 // LaunchJob creates all required Tower resources and launches a job template.
-// It performs the full workflow: create token, org, inventory, project,
-// job template, launch, then cleanup the token.
+// Full workflow matching Ansible run-tower-job.yaml:
+//  1. Create token
+//  2. Ensure organization
+//  3. Ensure inventory
+//  4. Create vault credentials (if any)
+//  5. Ensure project (with SCM settings)
+//  6. Ensure execution environment (if configured)
+//  7. Create job template (with retry on failure via project update)
+//  8. Associate credentials and instance groups with template
+//  9. Launch job (with retry on failure via project update)
 func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 	// Step 1: Create OAuth token.
 	token, tokenID, err := tc.CreateOAuthToken()
 	if err != nil {
 		return 0, fmt.Errorf("create oauth token: %w", err)
 	}
+	defer func() { _ = tc.DeleteOAuthToken(tokenID) }()
 
-	// Ensure token cleanup happens regardless of outcome.
-	defer func() {
-		_ = tc.DeleteOAuthToken(tokenID)
-	}()
-
-	// Step 2: Create organization.
+	// Step 2: Ensure organization.
 	orgID, err := tc.ensureResource(token, "/api/v2/organizations/", map[string]interface{}{
 		"name": config.Organization,
 	})
 	if err != nil {
-		return 0, fmt.Errorf("create organization: %w", err)
+		return 0, fmt.Errorf("ensure organization: %w", err)
 	}
 
-	// Step 3: Create inventory.
-	invID, err := tc.ensureResource(token, "/api/v2/inventories/", map[string]interface{}{
+	// Step 3: Ensure inventory.
+	_, err = tc.ensureResource(token, "/api/v2/inventories/", map[string]interface{}{
 		"name":         config.Inventory,
 		"organization": float64(orgID),
 	})
 	if err != nil {
-		return 0, fmt.Errorf("create inventory: %w", err)
+		return 0, fmt.Errorf("ensure inventory: %w", err)
 	}
 
-	// Step 4: Create project.
-	projID, err := tc.ensureResource(token, "/api/v2/projects/", map[string]interface{}{
-		"name":         config.ProjectName,
-		"organization": float64(orgID),
-		"scm_type":     "git",
-		"scm_url":      config.ProjectSCMURL,
-		"scm_branch":   config.ProjectSCMRef,
-	})
+	// Step 4: Create vault credentials (if any).
+	// Vault credentials are AWX credentials of type "Vault" with vault_id/vault_password inputs.
+	var credIDs []int
+	if len(config.VaultCredentials) > 0 {
+		// Find the "Vault" credential type ID.
+		vaultTypeID, err := tc.searchResource(token, "/api/v2/credential_types/", "Vault")
+		if err == nil && vaultTypeID > 0 {
+			for vaultID, vaultPassword := range config.VaultCredentials {
+				credName := config.Organization + " " + vaultID
+				credID, err := tc.ensureResource(token, "/api/v2/credentials/", map[string]interface{}{
+					"name":            credName,
+					"credential_type": float64(vaultTypeID),
+					"inputs": map[string]interface{}{
+						"vault_id":       vaultID,
+						"vault_password": vaultPassword,
+					},
+					"organization": float64(orgID),
+				})
+				if err != nil {
+					return 0, fmt.Errorf("ensure vault credential %q: %w", vaultID, err)
+				}
+				credIDs = append(credIDs, credID)
+			}
+		}
+	}
+
+	// Look up static credentials by name.
+	for _, credName := range config.Credentials {
+		credID, err := tc.searchResource(token, "/api/v2/credentials/", credName)
+		if err != nil {
+			return 0, fmt.Errorf("find credential %q: %w", credName, err)
+		}
+		if credID > 0 {
+			credIDs = append(credIDs, credID)
+		}
+	}
+
+	// Step 5: Ensure project (with SCM settings).
+	projData := map[string]interface{}{
+		"name":                     config.ProjectName,
+		"organization":             float64(orgID),
+		"scm_type":                 "git",
+		"scm_url":                  config.ProjectSCMURL,
+		"scm_branch":               config.ProjectSCMRef,
+		"scm_update_on_launch":     config.SCMUpdateOnLaunch,
+		"scm_update_cache_timeout": float64(config.SCMUpdateCacheTimeout),
+		"scm_clean":                config.SCMClean,
+	}
+	projID, err := tc.ensureResource(token, "/api/v2/projects/", projData)
 	if err != nil {
-		return 0, fmt.Errorf("create project: %w", err)
+		return 0, fmt.Errorf("ensure project: %w", err)
 	}
 
-	// Step 5: Create job template.
+	// Step 6: Ensure execution environment (if configured).
+	var eeID int
+	if config.ExecutionEnvironment != nil && config.ExecutionEnvironment.Image != "" {
+		eeData := map[string]interface{}{
+			"name":         config.ExecutionEnvironment.Name,
+			"image":        config.ExecutionEnvironment.Image,
+			"organization": float64(orgID),
+		}
+		if config.ExecutionEnvironment.Pull != "" {
+			eeData["pull"] = config.ExecutionEnvironment.Pull
+		}
+		// If the EE image is private, use the registry hostname as
+		// the credential name (must be pre-created on Tower).
+		if config.ExecutionEnvironment.Private {
+			registry := strings.SplitN(config.ExecutionEnvironment.Image, "/", 2)[0]
+			regCredID, _ := tc.searchResource(token, "/api/v2/credentials/", registry)
+			if regCredID > 0 {
+				eeData["credential"] = float64(regCredID)
+			}
+		}
+		eeID, err = tc.ensureResource(token, "/api/v2/execution_environments/", eeData)
+		if err != nil {
+			return 0, fmt.Errorf("ensure execution environment: %w", err)
+		}
+	}
+
+	// Step 7: Create job template (with retry via project update).
 	templateData := map[string]interface{}{
-		"name":      config.TemplateName,
-		"inventory": float64(invID),
-		"project":   float64(projID),
-		"playbook":  config.Playbook,
+		"name":                    config.TemplateName,
+		"project":                 float64(projID),
+		"playbook":                config.Playbook,
+		"ask_inventory_on_launch": true,
 	}
 	if config.Timeout > 0 {
 		templateData["timeout"] = float64(config.Timeout)
 	}
-	tmplID, err := tc.ensureResource(token, "/api/v2/job_templates/", templateData)
-	if err != nil {
-		return 0, fmt.Errorf("create job template: %w", err)
+	if eeID > 0 {
+		templateData["execution_environment"] = float64(eeID)
 	}
 
-	// Step 6: Launch the job template.
+	tmplID, err := tc.ensureResource(token, "/api/v2/job_templates/", templateData)
+	if err != nil {
+		// Retry: update project SCM, then retry template creation.
+		_ = tc.updateProject(token, projID)
+		tmplID, err = tc.ensureResource(token, "/api/v2/job_templates/", templateData)
+		if err != nil {
+			return 0, fmt.Errorf("ensure job template: %w", err)
+		}
+	}
+
+	// Step 8: Associate credentials with the template.
+	for _, credID := range credIDs {
+		if err := tc.associateChild(token, "/api/v2/job_templates/", tmplID, "credentials", credID); err != nil {
+			return 0, fmt.Errorf("associate credential %d: %w", credID, err)
+		}
+	}
+
+	// Associate instance groups with the template.
+	for _, igName := range config.InstanceGroups {
+		igID, err := tc.searchResource(token, "/api/v2/instance_groups/", igName)
+		if err != nil || igID == 0 {
+			continue
+		}
+		if err := tc.associateChild(token, "/api/v2/job_templates/", tmplID, "instance_groups", igID); err != nil {
+			return 0, fmt.Errorf("associate instance group %q: %w", igName, err)
+		}
+	}
+
+	// Step 9: Launch the job template (with retry via project update).
 	launchData := map[string]interface{}{}
 	if config.ExtraVars != nil {
 		extraVarsJSON, err := json.Marshal(config.ExtraVars)
@@ -308,9 +542,14 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 	}
 
 	launchPath := fmt.Sprintf("/api/v2/job_templates/%d/launch/", tmplID)
-	jobID, err := tc.ensureResource(token, launchPath, launchData)
+	jobID, err := tc.createResource(token, launchPath, launchData)
 	if err != nil {
-		return 0, fmt.Errorf("launch job: %w", err)
+		// Retry: update project SCM, then retry launch.
+		_ = tc.updateProject(token, projID)
+		jobID, err = tc.createResource(token, launchPath, launchData)
+		if err != nil {
+			return 0, fmt.Errorf("launch job: %w", err)
+		}
 	}
 
 	return jobID, nil

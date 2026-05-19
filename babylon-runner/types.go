@@ -185,3 +185,18 @@ func mergeMap(dst, src map[string]interface{}) {
 		dst[k] = v
 	}
 }
+
+// extractStringSlice extracts a []string from a map key that holds []interface{}.
+func extractStringSlice(m map[string]interface{}, key string) []string {
+	raw, ok := m[key].([]interface{})
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(raw))
+	for _, v := range raw {
+		if s, ok := v.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result
+}

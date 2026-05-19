@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 )
 
 // Default deployer entry points from babylon governor defaults/main.yaml.
@@ -262,16 +263,107 @@ func launchTowerJob(rc *RunContext, action, newState string, extraSpecVars, dyna
 	// Project name: "{org} {scm_url} ({scm_ref})".
 	projectName := fmt.Sprintf("%s %s (%s)", org, scmURL, scmRef)
 
+	// SCM settings (matching Ansible run-tower-job.yaml):
+	// scm_update_on_launch: true unless scm_ref is a release version (digits.digits).
+	scmUpdateOnLaunch := true
+	if regexp.MustCompile(`\d+\.\d+$`).MatchString(scmRef) {
+		scmUpdateOnLaunch = false
+	}
+	// scm_update_cache_timeout: __meta__.deployer.scm_update_cache_timeout (default 30).
+	scmUpdateCacheTimeout := 30
+	if deployer != nil {
+		if v, ok := deployer["scm_update_cache_timeout"].(float64); ok {
+			scmUpdateCacheTimeout = int(v)
+		}
+	}
+	// scm_clean: __meta__.deployer.scm_clean (default true).
+	scmClean := true
+	if deployer != nil {
+		if v, ok := deployer["scm_clean"].(bool); ok {
+			scmClean = v
+		}
+	}
+
+	// Execution environment (AAP2/Controller only).
+	// ansible_control_plane type from __meta__.ansible_control_plane.type (default "tower").
+	var eeConfig *EEConfig
+	controlPlaneType := "tower"
+	acp := getNestedMap(meta, "ansible_control_plane")
+	if acp != nil {
+		if t, ok := acp["type"].(string); ok && t != "" {
+			controlPlaneType = t
+		}
+	}
+	if controlPlaneType == "controller" {
+		ee := getNestedMap(deployer, "execution_environment")
+		if ee != nil {
+			eeImage, _ := ee["image"].(string)
+			if eeImage != "" {
+				eeName, _ := ee["name"].(string)
+				if eeName == "" {
+					eeName = org + " " + eeImage
+				}
+				eePull, _ := ee["pull"].(string)
+				eePrivate, _ := ee["private"].(bool)
+				eeConfig = &EEConfig{
+					Name:    eeName,
+					Image:   eeImage,
+					Pull:    eePull,
+					Private: eePrivate,
+				}
+			}
+		}
+	}
+
+	// Instance groups: per-action first, then global fallback.
+	// __meta__.deployer.actions.{action}.ansible_control_plane.instance_groups
+	// | default(__meta__.ansible_control_plane.instance_groups)
+	// | default([])
+	var instanceGroups []string
+	actionACP := getNestedMap(deployer, "actions", action, "ansible_control_plane")
+	if actionACP != nil {
+		instanceGroups = extractStringSlice(actionACP, "instance_groups")
+	}
+	if len(instanceGroups) == 0 && acp != nil {
+		instanceGroups = extractStringSlice(acp, "instance_groups")
+	}
+
+	// Static credentials from __meta__.deployer.credentials (default []).
+	var credentials []string
+	if deployer != nil {
+		credentials = extractStringSlice(deployer, "credentials")
+	}
+
+	// Vault credentials from governor.spec.vars.vault_credentials (default {}).
+	// Injected by the operator via varSecrets; always empty if not configured.
+	var vaultCredentials map[string]string
+	vc := getNestedMap(rc.Payload.Governor, "spec", "vars", "vault_credentials")
+	if len(vc) > 0 {
+		vaultCredentials = make(map[string]string, len(vc))
+		for k, v := range vc {
+			if s, ok := v.(string); ok {
+				vaultCredentials[k] = s
+			}
+		}
+	}
+
 	config := TowerJobConfig{
-		Organization:  org,
-		Inventory:     inventoryName,
-		ProjectName:   projectName,
-		ProjectSCMURL: scmURL,
-		ProjectSCMRef: scmRef,
-		TemplateName:  templateName,
-		Playbook:      playbook,
-		ExtraVars:     buildJobExtraVars(rc, action, dynamicJobVars),
-		Timeout:       timeout,
+		Organization:          org,
+		Inventory:             inventoryName,
+		ProjectName:           projectName,
+		ProjectSCMURL:         scmURL,
+		ProjectSCMRef:         scmRef,
+		SCMUpdateOnLaunch:     scmUpdateOnLaunch,
+		SCMUpdateCacheTimeout: scmUpdateCacheTimeout,
+		SCMClean:              scmClean,
+		TemplateName:          templateName,
+		Playbook:              playbook,
+		ExtraVars:             buildJobExtraVars(rc, action, dynamicJobVars),
+		Timeout:               timeout,
+		ExecutionEnvironment:  eeConfig,
+		InstanceGroups:        instanceGroups,
+		Credentials:           credentials,
+		VaultCredentials:      vaultCredentials,
 	}
 
 	slog.Info("launching tower job", "action", action, "subject", rc.SubjectName, "playbook", playbook)
