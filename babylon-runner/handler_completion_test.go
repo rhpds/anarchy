@@ -234,7 +234,7 @@ func TestHandleStatusComplete(t *testing.T) {
 	defer server.Close()
 	rc := newTestRunContext(t, server)
 
-	if err := handleStatusComplete(rc); err != nil {
+	if err := handleStatusComplete(rc, nil, nil); err != nil {
 		t.Fatalf("handleStatusComplete returned error: %v", err)
 	}
 

@@ -140,7 +140,8 @@ func handleDeployerJobSuccess(rc *RunContext, action string, jobStatus map[strin
 	case "stop":
 		return handleStopComplete(rc)
 	case "status":
-		return handleStatusComplete(rc)
+		data, _, messages := extractProvisionData(jobStatus)
+		return handleStatusComplete(rc, data, messages)
 	case "update":
 		return handleUpdateComplete(rc)
 	default:
@@ -157,21 +158,15 @@ func handleDestroyFailure(rc *RunContext, status string) error {
 	ts := nowUTC()
 	state := fmt.Sprintf("destroy-%s", status)
 
-	specVars := map[string]interface{}{
-		"current_state": state,
-	}
-	// Only error/failed set healthy=false (not canceled).
-	if status != "canceled" {
-		specVars["healthy"] = false
-	}
-
 	if err := rc.SubjectUpdate(SubjectPatch{
 		Patch: PatchBody{
 			Metadata: &PatchMetadata{
 				Labels: map[string]string{"state": state},
 			},
 			Spec: &PatchSpec{
-				Vars: specVars,
+				Vars: map[string]interface{}{
+					"current_state": state,
+				},
 			},
 			Status: map[string]interface{}{
 				"actions": map[string]interface{}{
@@ -432,32 +427,49 @@ func handleUpdateFailure(rc *RunContext, status string) error {
 	}
 
 	if !rc.IsBeingDeleted() {
-		// Canceled uses fixed 1m retry; error/failed use dynamic backoff.
+		// Canceled uses fixed 1m retry; error/failed use current interval
+		// without incrementing retry count (matching Ansible behavior).
 		if status == "canceled" {
 			return rc.ContinueAction("1m")
 		}
-		return continueWithRetry(rc)
+		interval := actionRetryInterval(rc.ActionRetryCount())
+		return rc.ContinueAction(interval)
 	}
 	rc.FinishAction(status)
 	return nil
 }
 
 // handleStatusComplete finalizes a successful status check.
-func handleStatusComplete(rc *RunContext) error {
+// statusData and statusMessages come from Tower job artifacts.
+func handleStatusComplete(rc *RunContext, statusData, statusMessages interface{}) error {
 	ts := nowUTC()
+
+	vars := map[string]interface{}{
+		"check_status_state": "successful",
+	}
+	if statusData != nil {
+		vars["status_data"] = statusData
+	}
+	if statusMessages != nil {
+		vars["status_messages"] = statusMessages
+	}
 
 	if err := rc.SubjectUpdate(SubjectPatch{
 		Patch: PatchBody{
 			Spec: &PatchSpec{
-				Vars: map[string]interface{}{
-					"check_status_state": "successful",
-				},
+				Vars: vars,
 			},
 			Status: map[string]interface{}{
 				"actions": map[string]interface{}{
 					"status": map[string]interface{}{
 						"completeTimestamp": ts,
 						"state":             "successful",
+					},
+				},
+				"towerJobs": map[string]interface{}{
+					"status": map[string]interface{}{
+						"completeTimestamp": ts,
+						"jobStatus":         "successful",
 					},
 				},
 			},
