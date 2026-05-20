@@ -19,6 +19,7 @@ type HandlerFunc func(rc *RunContext) error
 // RunContext holds per-run state and provides convenience methods
 // for accessing payload data and calling the Anarchy API.
 type RunContext struct {
+	Ctx         context.Context
 	Payload     RunPayload
 	Anarchy     *AnarchyClient
 	SubjectName string
@@ -30,9 +31,10 @@ type RunContext struct {
 	// SandboxBaseURL allows tests to override the sandbox API URL.
 	SandboxBaseURL string
 
-	finished               bool
-	finishActionDirective  *FinishActionDirective
-	deleteSubjectDirective *DeleteSubjectDirective
+	finished                 bool
+	finishActionDirective    *FinishActionDirective
+	continueActionDirective  *ContinueActionDirective
+	deleteSubjectDirective   *DeleteSubjectDirective
 }
 
 // FinishAction marks the action as finished with the given state.
@@ -49,33 +51,43 @@ func (rc *RunContext) DeleteSubject(removeFinalizers bool) {
 	slog.Info("subject marked for deletion", "subject", rc.SubjectName, "removeFinalizers", removeFinalizers)
 }
 
-// ContinueAction schedules the current action to run again after the
-// specified duration string (e.g. "30s", "5m").
-func (rc *RunContext) ContinueAction(after string) error {
-	return rc.Anarchy.ScheduleAction(rc.SubjectName, ScheduleActionRequest{
-		Action: rc.ActionName,
-		After:  after,
-	})
+// ContinueAction sets a directive to reschedule the current action after
+// the specified duration string (e.g. "30s", "5m"). The directive is
+// included in the POST /run result for the operator to process.
+func (rc *RunContext) ContinueAction(after string) {
+	rc.continueActionDirective = &ContinueActionDirective{
+		After: afterTimestamp(after),
+	}
 }
 
-// ContinueActionWithVars schedules the current action with additional vars
-// (e.g. action_retry_count).
-func (rc *RunContext) ContinueActionWithVars(after string, vars map[string]interface{}) error {
-	return rc.Anarchy.ScheduleAction(rc.SubjectName, ScheduleActionRequest{
-		Action: rc.ActionName,
-		After:  after,
-		Vars:   vars,
-	})
+// ContinueActionWithVars sets a directive to reschedule the current action
+// with additional vars (e.g. action_retry_count).
+func (rc *RunContext) ContinueActionWithVars(after string, vars map[string]interface{}) {
+	rc.continueActionDirective = &ContinueActionDirective{
+		After: afterTimestamp(after),
+		Vars:  vars,
+	}
+}
+
+// afterTimestamp converts a Go duration string (e.g. "5m", "30s") to an
+// absolute UTC timestamp in the format the Anarchy API expects.
+func afterTimestamp(after string) string {
+	d, err := time.ParseDuration(after)
+	if err != nil {
+		// Already an absolute timestamp or unparseable — pass through.
+		return after
+	}
+	return time.Now().UTC().Add(d).Format("2006-01-02T15:04:05Z")
 }
 
 // SubjectUpdate delegates to AnarchyClient.SubjectUpdate for this subject.
 func (rc *RunContext) SubjectUpdate(patch SubjectPatch) error {
-	return rc.Anarchy.SubjectUpdate(rc.SubjectName, patch)
+	return rc.Anarchy.SubjectUpdate(rc.Ctx, rc.SubjectName, patch)
 }
 
 // ScheduleAction delegates to AnarchyClient.ScheduleAction for this subject.
 func (rc *RunContext) ScheduleAction(req ScheduleActionRequest) error {
-	return rc.Anarchy.ScheduleAction(rc.SubjectName, req)
+	return rc.Anarchy.ScheduleAction(rc.Ctx, rc.SubjectName, req)
 }
 
 // CurrentState returns subject.spec.vars.current_state.
@@ -277,6 +289,7 @@ func (r *Runner) pollOnce(ctx context.Context) error {
 		"handlerName", payload.Handler.Name, "action", actionName)
 
 	rc := &RunContext{
+		Ctx:         ctx,
 		Payload:     *payload,
 		Anarchy:     r.anarchy,
 		SubjectName: subjectName,
@@ -298,11 +311,13 @@ func (r *Runner) pollOnce(ctx context.Context) error {
 		result.Result.StatusMessage = err.Error()
 	}
 
-	// Include handler directives in the result.
-	result.FinishAction = rc.finishActionDirective
-	result.DeleteSubject = rc.deleteSubjectDirective
+	// Include handler directives inside result (operator reads them
+	// from status.result.{finishAction,continueAction,deleteSubject}).
+	result.Result.FinishAction = rc.finishActionDirective
+	result.Result.ContinueAction = rc.continueActionDirective
+	result.Result.DeleteSubject = rc.deleteSubjectDirective
 
-	if err := r.postResult(runName, result); err != nil {
+	if err := r.postResult(ctx, runName, result); err != nil {
 		return fmt.Errorf("postResult run=%s: %w", runName, err)
 	}
 
@@ -363,7 +378,7 @@ func (r *Runner) getRun(ctx context.Context) (*RunPayload, error) {
 
 // postResult posts the handler result back to Anarchy. It retries up to
 // 10 times with exponential backoff.
-func (r *Runner) postResult(runName string, result RunResult) error {
+func (r *Runner) postResult(ctx context.Context, runName string, result RunResult) error {
 	url := fmt.Sprintf("%s/run/%s", r.cfg.AnarchyURL, runName)
 	data, err := json.Marshal(result)
 	if err != nil {
@@ -378,10 +393,14 @@ func (r *Runner) postResult(runName string, result RunResult) error {
 				delay = 60 * time.Second
 			}
 			slog.Warn("retrying POST", "url", url, "delay", delay, "attempt", attempt+1, "maxAttempts", maxAttempts)
-			time.Sleep(delay)
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 
-		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(data))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
 		if err != nil {
 			return fmt.Errorf("create request: %w", err)
 		}
@@ -390,6 +409,9 @@ func (r *Runner) postResult(runName string, result RunResult) error {
 
 		resp, err := r.client.Do(req)
 		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			slog.Error("POST attempt failed", "url", url, "attempt", attempt+1, "error", err)
 			continue
 		}

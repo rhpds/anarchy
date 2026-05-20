@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -58,7 +59,7 @@ func TestAnarchyClientSubjectUpdate(t *testing.T) {
 			SkipUpdateProcessing: true,
 		},
 	}
-	if err := client.SubjectUpdate("test-subject", patch); err != nil {
+	if err := client.SubjectUpdate(context.Background(), "test-subject", patch); err != nil {
 		t.Fatalf("SubjectUpdate returned error: %v", err)
 	}
 }
@@ -105,7 +106,7 @@ func TestAnarchyClientScheduleAction(t *testing.T) {
 		Action: "stop",
 		Cancel: []string{"start", "restart"},
 	}
-	if err := client.ScheduleAction("test-subject", req); err != nil {
+	if err := client.ScheduleAction(context.Background(), "test-subject", req); err != nil {
 		t.Fatalf("ScheduleAction returned error: %v", err)
 	}
 }
@@ -140,7 +141,7 @@ func TestAnarchyClientRetry(t *testing.T) {
 			SkipUpdateProcessing: true,
 		},
 	}
-	if err := client.SubjectUpdate("test-subject", patch); err != nil {
+	if err := client.SubjectUpdate(context.Background(), "test-subject", patch); err != nil {
 		t.Fatalf("SubjectUpdate should succeed after retries, got: %v", err)
 	}
 	if got := attempts.Load(); got != 3 {

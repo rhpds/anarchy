@@ -9,6 +9,146 @@ import (
 	"testing"
 )
 
+func TestInsertUnvaultStringNoVault(t *testing.T) {
+	vars := map[string]interface{}{
+		"env_type": "ocp4-cluster",
+		"count":    float64(3),
+		"nested": map[string]interface{}{
+			"key": "plain-value",
+		},
+	}
+	result := insertUnvaultString(vars)
+
+	if result["env_type"] != "ocp4-cluster" {
+		t.Errorf("env_type = %v, want ocp4-cluster", result["env_type"])
+	}
+	if result["count"] != float64(3) {
+		t.Errorf("count = %v, want 3", result["count"])
+	}
+	nested := result["nested"].(map[string]interface{})
+	if nested["key"] != "plain-value" {
+		t.Errorf("nested.key = %v, want plain-value", nested["key"])
+	}
+}
+
+func TestInsertUnvaultStringSimple(t *testing.T) {
+	vaultBlob := "$ANSIBLE_VAULT;1.1;AES256\n3836313733...\n"
+	vars := map[string]interface{}{
+		"env_type":   "ocp4-cluster",
+		"secret_key": vaultBlob,
+	}
+	result := insertUnvaultString(vars)
+
+	// env_type should be unchanged.
+	if result["env_type"] != "ocp4-cluster" {
+		t.Errorf("env_type = %v, want ocp4-cluster", result["env_type"])
+	}
+
+	// secret_key should be replaced with Jinja2 lookup.
+	secretVal, ok := result["secret_key"].(string)
+	if !ok {
+		t.Fatalf("secret_key is not a string: %T", result["secret_key"])
+	}
+	if !strings.HasPrefix(secretVal, "{{ lookup('unvault_string', __vaulted_value_") {
+		t.Errorf("secret_key = %q, want Jinja2 lookup expression", secretVal)
+	}
+	if !strings.HasSuffix(secretVal, ") }}") {
+		t.Errorf("secret_key = %q, missing closing ) }}", secretVal)
+	}
+
+	// Extract the variable name and verify the blob is stored there.
+	varName := strings.TrimPrefix(secretVal, "{{ lookup('unvault_string', ")
+	varName = strings.TrimSuffix(varName, ") }}")
+	storedBlob, ok := result[varName].(string)
+	if !ok {
+		t.Fatalf("vaulted value key %q not found in result", varName)
+	}
+	if storedBlob != vaultBlob {
+		t.Errorf("stored blob = %q, want original vault blob", storedBlob)
+	}
+}
+
+func TestInsertUnvaultStringNested(t *testing.T) {
+	vaultBlob1 := "$ANSIBLE_VAULT;1.1;AES256\naaa\n"
+	vaultBlob2 := "  $ANSIBLE_VAULT;1.1;AES256\nbbb\n" // leading whitespace
+	vars := map[string]interface{}{
+		"top_level": "plain",
+		"creds": map[string]interface{}{
+			"access_key": "AKIA...",
+			"secret_key": vaultBlob1,
+		},
+		"list_vals": []interface{}{
+			"plain",
+			vaultBlob2,
+			float64(42),
+		},
+	}
+	result := insertUnvaultString(vars)
+
+	// top_level unchanged.
+	if result["top_level"] != "plain" {
+		t.Errorf("top_level = %v, want plain", result["top_level"])
+	}
+
+	// Nested dict: access_key unchanged, secret_key replaced.
+	creds := result["creds"].(map[string]interface{})
+	if creds["access_key"] != "AKIA..." {
+		t.Errorf("creds.access_key = %v, want AKIA...", creds["access_key"])
+	}
+	secretVal := creds["secret_key"].(string)
+	if !strings.HasPrefix(secretVal, "{{ lookup('unvault_string', __vaulted_value_") {
+		t.Errorf("creds.secret_key = %q, want Jinja2 lookup", secretVal)
+	}
+
+	// List: plain unchanged, vault replaced, number unchanged.
+	list := result["list_vals"].([]interface{})
+	if list[0] != "plain" {
+		t.Errorf("list[0] = %v, want plain", list[0])
+	}
+	listVault := list[1].(string)
+	if !strings.HasPrefix(listVault, "{{ lookup('unvault_string', __vaulted_value_") {
+		t.Errorf("list[1] = %q, want Jinja2 lookup", listVault)
+	}
+	if list[2] != float64(42) {
+		t.Errorf("list[2] = %v, want 42", list[2])
+	}
+
+	// Count __vaulted_value_ keys at top level — should be exactly 2.
+	vaultedCount := 0
+	for k := range result {
+		if strings.HasPrefix(k, "__vaulted_value_") {
+			vaultedCount++
+		}
+	}
+	if vaultedCount != 2 {
+		t.Errorf("vaulted value count = %d, want 2", vaultedCount)
+	}
+}
+
+func TestInsertUnvaultStringMultipleSameValue(t *testing.T) {
+	// Same vault blob used twice should get unique variable names.
+	vaultBlob := "$ANSIBLE_VAULT;1.1;AES256\nsame\n"
+	vars := map[string]interface{}{
+		"key1": vaultBlob,
+		"key2": vaultBlob,
+	}
+	result := insertUnvaultString(vars)
+
+	val1 := result["key1"].(string)
+	val2 := result["key2"].(string)
+
+	// Both should be lookups but with different variable names.
+	if !strings.HasPrefix(val1, "{{ lookup('unvault_string', __vaulted_value_") {
+		t.Errorf("key1 = %q, want Jinja2 lookup", val1)
+	}
+	if !strings.HasPrefix(val2, "{{ lookup('unvault_string', __vaulted_value_") {
+		t.Errorf("key2 = %q, want Jinja2 lookup", val2)
+	}
+	if val1 == val2 {
+		t.Errorf("key1 and key2 have the same lookup expression, should be unique")
+	}
+}
+
 func TestTowerSelectControllerRandom(t *testing.T) {
 	controllers := []map[string]interface{}{
 		{"hostname": "ctrl-1", "active_job_count": float64(5)},

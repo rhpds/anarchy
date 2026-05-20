@@ -1,12 +1,40 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 )
+
+// assertAfterTimestamp checks that an "after" field from a ScheduleAction
+// request is a valid UTC timestamp approximately `expected` duration from now
+// (within 10 seconds tolerance).
+func assertAfterTimestamp(t *testing.T, got interface{}, expected string) {
+	t.Helper()
+	s, ok := got.(string)
+	if !ok {
+		t.Errorf("after: got %T, want string", got)
+		return
+	}
+	ts, err := time.Parse("2006-01-02T15:04:05Z", s)
+	if err != nil {
+		t.Errorf("after: %q is not a valid timestamp: %v", s, err)
+		return
+	}
+	d, err := time.ParseDuration(expected)
+	if err != nil {
+		t.Fatalf("bad expected duration %q: %v", expected, err)
+	}
+	diff := ts.Sub(time.Now().UTC())
+	tolerance := 10 * time.Second
+	if diff < d-tolerance || diff > d+tolerance {
+		t.Errorf("after = %s (%.0fs from now), want ~%s", s, diff.Seconds(), expected)
+	}
+}
 
 // anarchyCall records an HTTP request made to the test Anarchy server.
 type anarchyCall struct {
@@ -61,6 +89,7 @@ func newTestRunContext(t *testing.T, server *httptest.Server) *RunContext {
 	}
 
 	return &RunContext{
+		Ctx: context.Background(),
 		Payload: RunPayload{
 			Governor: map[string]interface{}{
 				"spec": map[string]interface{}{
@@ -600,9 +629,9 @@ func TestHandleDestroyPending(t *testing.T) {
 		t.Fatalf("handleDestroy returned error: %v", err)
 	}
 
-	// Should set startTimestamp, launch tower job (PATCH with towerJobs), and schedule continuation.
-	if len(*calls) < 3 {
-		t.Fatalf("expected at least 3 calls, got %d", len(*calls))
+	// Should set startTimestamp, launch tower job (PATCH with towerJobs). ContinueAction sets a directive.
+	if len(*calls) < 2 {
+		t.Fatalf("expected at least 2 calls, got %d", len(*calls))
 	}
 
 	// First call: PATCH to set startTimestamp.
@@ -618,20 +647,11 @@ func TestHandleDestroyPending(t *testing.T) {
 		t.Error("expected startTimestamp to be set")
 	}
 
-	// Last call: POST to schedule action continuation.
-	lastCall := (*calls)[len(*calls)-1]
-	if lastCall.Method != http.MethodPost {
-		t.Errorf("last call method = %s, want POST", lastCall.Method)
+	// ContinueAction now sets a directive instead of making a POST call.
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
-	if lastCall.Path != "/run/subject/test-subject/actions" {
-		t.Errorf("last call path = %s, want /run/subject/test-subject/actions", lastCall.Path)
-	}
-	if lastCall.Body["action"] != "destroy" {
-		t.Errorf("action = %v, want destroy", lastCall.Body["action"])
-	}
-	if lastCall.Body["after"] != "5m" {
-		t.Errorf("after = %v, want 5m", lastCall.Body["after"])
-	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "5m")
 }
 
 func TestHandleDestroyComplete(t *testing.T) {
@@ -961,17 +981,15 @@ func TestCheckDeployerJobNoTowerJobInfo(t *testing.T) {
 		t.Fatalf("checkDeployerJob error: %v", err)
 	}
 
-	// Should schedule continuation (ContinueAction 5m).
-	if len(*calls) != 1 {
-		t.Fatalf("expected 1 call (POST continue), got %d", len(*calls))
+	// ContinueAction now sets a directive (no API call).
+	if len(*calls) != 0 {
+		t.Fatalf("expected 0 calls (ContinueAction sets directive), got %d", len(*calls))
 	}
-	c0 := (*calls)[0]
-	if c0.Method != http.MethodPost {
-		t.Errorf("call[0] method = %s, want POST", c0.Method)
+
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
-	if c0.Body["after"] != "5m" {
-		t.Errorf("after = %v, want 5m", c0.Body["after"])
-	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "5m")
 
 	if rc.finished {
 		t.Error("expected FinishAction NOT to be called")
@@ -996,12 +1014,14 @@ func TestCheckDeployerJobMissingDeployerJobField(t *testing.T) {
 		t.Fatalf("checkDeployerJob error: %v", err)
 	}
 
-	if len(*calls) != 1 {
-		t.Fatalf("expected 1 call (POST continue), got %d", len(*calls))
+	// ContinueAction now sets a directive (no API call).
+	if len(*calls) != 0 {
+		t.Fatalf("expected 0 calls (ContinueAction sets directive), got %d", len(*calls))
 	}
-	if (*calls)[0].Body["after"] != "5m" {
-		t.Errorf("after = %v, want 5m", (*calls)[0].Body["after"])
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "5m")
 }
 
 func TestCheckDeployerJobMissingTowerHost(t *testing.T) {
@@ -1022,12 +1042,14 @@ func TestCheckDeployerJobMissingTowerHost(t *testing.T) {
 		t.Fatalf("checkDeployerJob error: %v", err)
 	}
 
-	if len(*calls) != 1 {
-		t.Fatalf("expected 1 call (POST continue), got %d", len(*calls))
+	// ContinueAction now sets a directive (no API call).
+	if len(*calls) != 0 {
+		t.Fatalf("expected 0 calls (ContinueAction sets directive), got %d", len(*calls))
 	}
-	if (*calls)[0].Body["after"] != "5m" {
-		t.Errorf("after = %v, want 5m", (*calls)[0].Body["after"])
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "5m")
 }
 
 func TestCheckDeployerJobCanceled(t *testing.T) {

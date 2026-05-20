@@ -49,7 +49,8 @@ func runStop(rc *RunContext) error {
 			slog.Error("runStop: tower launch failed", "subject", rc.SubjectName, "error", err)
 			return err
 		}
-		return rc.ContinueAction("5m")
+		rc.ContinueAction("5m")
+		return nil
 	}
 
 	// Deployer disabled and sandbox API in use: perform sandbox API stop.

@@ -86,7 +86,8 @@ func runStart(rc *RunContext) error {
 			slog.Error("runStart: tower launch failed", "subject", rc.SubjectName, "error", err)
 			return err
 		}
-		return rc.ContinueAction("5m")
+		rc.ContinueAction("5m")
+		return nil
 	}
 
 	return nil

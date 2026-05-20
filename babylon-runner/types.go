@@ -21,22 +21,34 @@ type Handler struct {
 }
 
 // RunResult is the body for POST /run/{name}.
+// The operator reads directives (finishAction, continueAction, deleteSubject)
+// from inside the "result" object, so they must be nested there.
 type RunResult struct {
-	Result        ResultPayload          `json:"result"`
-	FinishAction  *FinishActionDirective  `json:"finishAction,omitempty"`
-	DeleteSubject *DeleteSubjectDirective `json:"deleteSubject,omitempty"`
+	Result ResultPayload `json:"result"`
 }
 
-// ResultPayload holds the outcome of a handler execution.
+// ResultPayload holds the outcome of a handler execution plus directives
+// for the operator (finish, continue, delete). The operator reads all of
+// these from status.result after the API stores the result dict.
 type ResultPayload struct {
-	RC            int    `json:"rc"`
-	Status        string `json:"status"` // "successful" or "failed"
-	StatusMessage string `json:"statusMessage,omitempty"`
+	RC             int                      `json:"rc"`
+	Status         string                   `json:"status"` // "successful" or "failed"
+	StatusMessage  string                   `json:"statusMessage,omitempty"`
+	FinishAction   *FinishActionDirective   `json:"finishAction,omitempty"`
+	ContinueAction *ContinueActionDirective `json:"continueAction,omitempty"`
+	DeleteSubject  *DeleteSubjectDirective  `json:"deleteSubject,omitempty"`
 }
 
 // FinishActionDirective signals the operator to finish the current action.
 type FinishActionDirective struct {
 	State string `json:"state"`
+}
+
+// ContinueActionDirective signals the operator to reschedule the
+// current action (e.g. poll Tower job status in 5m).
+type ContinueActionDirective struct {
+	After string                 `json:"after,omitempty"`
+	Vars  map[string]interface{} `json:"vars,omitempty"`
 }
 
 // DeleteSubjectDirective signals the operator to delete the subject.

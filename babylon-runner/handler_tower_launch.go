@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"regexp"
 )
 
@@ -82,13 +84,76 @@ func getTowerClientForAction(rc *RunContext) (*TowerClient, string, error) {
 	}
 
 	hostname, _ := controller["hostname"].(string)
-	username, _ := controller["user"].(string)
-	password, _ := controller["password"].(string)
 	if hostname == "" {
 		return nil, "", fmt.Errorf("controller has no hostname")
 	}
 
+	username, password, err := resolveControllerCreds(rc, controller)
+	if err != nil {
+		return nil, "", fmt.Errorf("credentials for %s: %w", hostname, err)
+	}
+
 	return NewTowerClient(hostname, username, password), hostname, nil
+}
+
+// resolveControllerCreds returns (username, password) for a controller entry.
+// It tries, in order:
+//  1. user/password fields directly on the controller map
+//  2. babylon_tower varSecret from governor vars
+//  3. K8s Secret with label babylon.gpte.redhat.com/ansible-control-plane={hostname}
+func resolveControllerCreds(rc *RunContext, controller map[string]interface{}) (string, string, error) {
+	hostname, _ := controller["hostname"].(string)
+	username, _ := controller["user"].(string)
+	password, _ := controller["password"].(string)
+
+	if username != "" && password != "" {
+		return username, password, nil
+	}
+
+	// Fallback 1: babylon_tower varSecret (resolved by operator into governor vars).
+	bt := getNestedMap(rc.Payload.Governor, "spec", "vars", "babylon_tower")
+	if bt != nil {
+		if u, ok := bt["user"].(string); ok && username == "" {
+			username = u
+		}
+		if p, ok := bt["password"].(string); ok && password == "" {
+			password = p
+		}
+		if username != "" && password != "" {
+			return username, password, nil
+		}
+	}
+
+	// Fallback 2: K8s Secret lookup by controller hostname label.
+	// Matches the Ansible role's kubernetes.core.k8s_info label selector.
+	ns := os.Getenv("ANARCHY_NAMESPACE")
+	if ns == "" {
+		// Derive namespace from the pod's service account.
+		if nsBytes, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace"); err == nil {
+			ns = string(nsBytes)
+		}
+	}
+	if ns != "" && hostname != "" {
+		label := "babylon.gpte.redhat.com/ansible-control-plane=" + hostname
+		data, err := k8sSecretData(ns, label)
+		if err != nil {
+			slog.Warn("k8s secret lookup failed", "hostname", hostname, "error", err)
+		} else {
+			if u, ok := data["user"]; ok && username == "" {
+				decoded, _ := base64.StdEncoding.DecodeString(u)
+				username = string(decoded)
+			}
+			if p, ok := data["password"]; ok && password == "" {
+				decoded, _ := base64.StdEncoding.DecodeString(p)
+				password = string(decoded)
+			}
+		}
+	}
+
+	if username == "" || password == "" {
+		return "", "", fmt.Errorf("no credentials found (checked controller entry, babylon_tower varSecret, k8s secret)")
+	}
+	return username, password, nil
 }
 
 // buildJobExtraVars assembles the extra variables for a Tower job by
@@ -115,8 +180,21 @@ func buildJobExtraVars(rc *RunContext, action string, dynamicJobVars map[string]
 		mergeMap(extraVars, dynamicJobVars)
 	}
 
+	// Debug: log what we got from each source.
+	slog.Debug("buildJobExtraVars sources",
+		"subjectJobVarsNil", rc.JobVars() == nil,
+		"governorJobVarsNil", rc.GovernorJobVars() == nil,
+		"dynamicJobVarsNil", dynamicJobVars == nil)
+
 	// Remove __meta__ from merged vars.
 	delete(extraVars, "__meta__")
+
+	// Debug: log final extra_vars keys.
+	keys := make([]string, 0, len(extraVars))
+	for k := range extraVars {
+		keys = append(keys, k)
+	}
+	slog.Debug("buildJobExtraVars", "numVars", len(extraVars), "keys", keys)
 
 	// Action extra_vars from deployer config, defaulting to {"ACTION": action}.
 	meta := rc.Meta()
@@ -204,8 +282,10 @@ func getTowerClientForHost(rc *RunContext, hostname string) (*TowerClient, error
 		}
 		h, _ := m["hostname"].(string)
 		if h == hostname {
-			username, _ := m["user"].(string)
-			password, _ := m["password"].(string)
+			username, password, err := resolveControllerCreds(rc, m)
+			if err != nil {
+				return nil, fmt.Errorf("credentials for %s: %w", hostname, err)
+			}
 			return NewTowerClient(hostname, username, password), nil
 		}
 	}
@@ -358,7 +438,7 @@ func launchTowerJob(rc *RunContext, action, newState string, extraSpecVars, dyna
 		SCMClean:              scmClean,
 		TemplateName:          templateName,
 		Playbook:              playbook,
-		ExtraVars:             buildJobExtraVars(rc, action, dynamicJobVars),
+		ExtraVars:             insertUnvaultString(buildJobExtraVars(rc, action, dynamicJobVars)),
 		Timeout:               timeout,
 		ExecutionEnvironment:  eeConfig,
 		InstanceGroups:        instanceGroups,
@@ -366,7 +446,7 @@ func launchTowerJob(rc *RunContext, action, newState string, extraSpecVars, dyna
 		VaultCredentials:      vaultCredentials,
 	}
 
-	slog.Info("launching tower job", "action", action, "subject", rc.SubjectName, "playbook", playbook)
+	slog.Info("launching tower job", "action", action, "subject", rc.SubjectName, "entryPoint", playbook)
 
 	jobID, err := tc.LaunchJob(config)
 	if err != nil {

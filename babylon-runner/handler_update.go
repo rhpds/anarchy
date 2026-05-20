@@ -33,5 +33,6 @@ func runUpdate(rc *RunContext) error {
 		slog.Error("runUpdate: tower launch failed", "subject", rc.SubjectName, "error", err)
 		return err
 	}
-	return rc.ContinueAction("5m")
+	rc.ContinueAction("5m")
+	return nil
 }

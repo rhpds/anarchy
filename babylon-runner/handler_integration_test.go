@@ -136,9 +136,9 @@ func TestIntegrationProvisionWithTowerJob(t *testing.T) {
 		t.Fatalf("handleProvision returned error: %v", err)
 	}
 
-	// Expect at least 3 calls: set startTimestamp, patch towerJobs, continue action.
-	if len(*calls) < 3 {
-		t.Fatalf("expected at least 3 calls, got %d", len(*calls))
+	// Expect at least 2 calls: set startTimestamp, patch towerJobs. ContinueAction sets a directive.
+	if len(*calls) < 2 {
+		t.Fatalf("expected at least 2 calls, got %d", len(*calls))
 	}
 
 	// First call: PATCH to set startTimestamp.
@@ -203,17 +203,11 @@ func TestIntegrationProvisionWithTowerJob(t *testing.T) {
 		t.Errorf("current_state = %v, want provisioning", vars["current_state"])
 	}
 
-	// Last call: POST to continue action with 5m.
-	lastCall := (*calls)[len(*calls)-1]
-	if lastCall.Method != http.MethodPost {
-		t.Errorf("last call method = %s, want POST", lastCall.Method)
+	// ContinueAction now sets a directive instead of making a POST call.
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
-	if lastCall.Body["action"] != "provision" {
-		t.Errorf("action = %v, want provision", lastCall.Body["action"])
-	}
-	if lastCall.Body["after"] != "5m" {
-		t.Errorf("after = %v, want 5m", lastCall.Body["after"])
-	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "5m")
 }
 
 func TestIntegrationProvisionWithSandboxAndTower(t *testing.T) {
@@ -246,9 +240,9 @@ func TestIntegrationProvisionWithSandboxAndTower(t *testing.T) {
 		t.Fatalf("handleProvision returned error: %v", err)
 	}
 
-	// Should have multiple calls: startTimestamp, sandbox vars update, tower launch, continue.
-	if len(*calls) < 4 {
-		t.Fatalf("expected at least 4 calls, got %d", len(*calls))
+	// Should have multiple calls: startTimestamp, sandbox vars update, tower launch. ContinueAction sets a directive.
+	if len(*calls) < 3 {
+		t.Fatalf("expected at least 3 calls, got %d", len(*calls))
 	}
 
 	// Find the sandbox vars update PATCH (has job_vars with sandbox_name — non-cred field).
@@ -328,14 +322,11 @@ func TestIntegrationProvisionWithSandboxAndTower(t *testing.T) {
 		t.Error("expected a PATCH with towerJobs after sandbox vars update")
 	}
 
-	// Last call: continue action.
-	lastCall := (*calls)[len(*calls)-1]
-	if lastCall.Method != http.MethodPost {
-		t.Errorf("last call method = %s, want POST", lastCall.Method)
+	// ContinueAction now sets a directive instead of making a POST call.
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
-	if lastCall.Body["after"] != "5m" {
-		t.Errorf("after = %v, want 5m", lastCall.Body["after"])
-	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "5m")
 }
 
 func TestIntegrationProvisionSandboxQueued(t *testing.T) {
@@ -412,14 +403,11 @@ func TestIntegrationProvisionSandboxQueued(t *testing.T) {
 		t.Errorf("placementStatus = %v, want queued", provJob["placementStatus"])
 	}
 
-	// Last call should be continue with 30s.
-	lastCall := (*calls)[len(*calls)-1]
-	if lastCall.Method != http.MethodPost {
-		t.Errorf("last call method = %s, want POST", lastCall.Method)
+	// ContinueAction now sets a directive instead of making a POST call.
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
-	if lastCall.Body["after"] != "30s" {
-		t.Errorf("after = %v, want 30s", lastCall.Body["after"])
-	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "30s")
 }
 
 func TestIntegrationCheckProvisionQueueSuccess(t *testing.T) {
@@ -540,9 +528,9 @@ func TestIntegrationCheckProvisionQueueStillQueued(t *testing.T) {
 		t.Fatalf("handleProvision returned error: %v", err)
 	}
 
-	// Should have: PATCH with queued status, POST continue 30s.
-	if len(*calls) < 2 {
-		t.Fatalf("expected at least 2 calls, got %d", len(*calls))
+	// Should have: PATCH with queued status. ContinueAction sets a directive.
+	if len(*calls) < 1 {
+		t.Fatalf("expected at least 1 call, got %d", len(*calls))
 	}
 
 	// Verify the PATCH updates sandboxAPIJobs status.
@@ -575,14 +563,11 @@ func TestIntegrationCheckProvisionQueueStillQueued(t *testing.T) {
 		t.Errorf("placementStatus = %v, want queued", pj["placementStatus"])
 	}
 
-	// Last call: continue 30s.
-	lastCall := (*calls)[len(*calls)-1]
-	if lastCall.Method != http.MethodPost {
-		t.Errorf("last call method = %s, want POST", lastCall.Method)
+	// ContinueAction now sets a directive instead of making a POST call.
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
-	if lastCall.Body["after"] != "30s" {
-		t.Errorf("after = %v, want 30s", lastCall.Body["after"])
-	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "30s")
 }
 
 func TestIntegrationDestroyWithTowerJob(t *testing.T) {
@@ -607,9 +592,9 @@ func TestIntegrationDestroyWithTowerJob(t *testing.T) {
 		t.Fatalf("handleDestroy returned error: %v", err)
 	}
 
-	// Should have: set startTimestamp, launch tower job (patch towerJobs), continue.
-	if len(*calls) < 3 {
-		t.Fatalf("expected at least 3 calls, got %d", len(*calls))
+	// Should have: set startTimestamp, launch tower job (patch towerJobs). ContinueAction sets a directive.
+	if len(*calls) < 2 {
+		t.Fatalf("expected at least 2 calls, got %d", len(*calls))
 	}
 
 	// Find the towerJobs PATCH.
@@ -653,17 +638,11 @@ func TestIntegrationDestroyWithTowerJob(t *testing.T) {
 		t.Errorf("current_state = %v, want destroying", v["current_state"])
 	}
 
-	// Last call: continue 5m.
-	lastCall := (*calls)[len(*calls)-1]
-	if lastCall.Method != http.MethodPost {
-		t.Errorf("last call method = %s, want POST", lastCall.Method)
+	// ContinueAction now sets a directive instead of making a POST call.
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
-	if lastCall.Body["action"] != "destroy" {
-		t.Errorf("action = %v, want destroy", lastCall.Body["action"])
-	}
-	if lastCall.Body["after"] != "5m" {
-		t.Errorf("after = %v, want 5m", lastCall.Body["after"])
-	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "5m")
 }
 
 func TestIntegrationDestroyCompleteWithSandboxCleanup(t *testing.T) {
@@ -864,14 +843,11 @@ func TestIntegrationStopWithTowerJob(t *testing.T) {
 		t.Errorf("current_state = %v, want stopping", v["current_state"])
 	}
 
-	// Last call: continue 5m.
-	lastCall := (*calls)[len(*calls)-1]
-	if lastCall.Method != http.MethodPost {
-		t.Errorf("last call method = %s, want POST", lastCall.Method)
+	// ContinueAction now sets a directive instead of making a POST call.
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
-	if lastCall.Body["after"] != "5m" {
-		t.Errorf("after = %v, want 5m", lastCall.Body["after"])
-	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "5m")
 }
 
 func TestIntegrationStatusWithTowerJob(t *testing.T) {
@@ -896,9 +872,9 @@ func TestIntegrationStatusWithTowerJob(t *testing.T) {
 		t.Fatalf("handleStatus returned error: %v", err)
 	}
 
-	// Should have: set startTimestamp, tower launch PATCH, continue.
-	if len(*calls) < 3 {
-		t.Fatalf("expected at least 3 calls, got %d", len(*calls))
+	// Should have: set startTimestamp, tower launch PATCH. ContinueAction sets a directive.
+	if len(*calls) < 2 {
+		t.Fatalf("expected at least 2 calls, got %d", len(*calls))
 	}
 
 	// Find the towerJobs PATCH and verify check_status_state.
@@ -934,14 +910,11 @@ func TestIntegrationStatusWithTowerJob(t *testing.T) {
 	// Status action does not set current_state (newState is empty), so no state label.
 	// But check_status_state should be in the vars.
 
-	// Last call: continue 5m.
-	lastCall := (*calls)[len(*calls)-1]
-	if lastCall.Method != http.MethodPost {
-		t.Errorf("last call method = %s, want POST", lastCall.Method)
+	// ContinueAction now sets a directive instead of making a POST call.
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
-	if lastCall.Body["after"] != "5m" {
-		t.Errorf("after = %v, want 5m", lastCall.Body["after"])
-	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "5m")
 }
 
 func TestIntegrationEventDeleteWithCancelJobs(t *testing.T) {
@@ -1284,9 +1257,9 @@ func TestIntegrationDestroyWithCancelProvisionJob(t *testing.T) {
 		t.Fatalf("handleDestroy returned error: %v", err)
 	}
 
-	// Should have: set startTimestamp, tower job launch, continue.
-	if len(*calls) < 3 {
-		t.Fatalf("expected at least 3 calls, got %d", len(*calls))
+	// Should have: set startTimestamp, tower job launch. ContinueAction sets a directive.
+	if len(*calls) < 2 {
+		t.Fatalf("expected at least 2 calls, got %d", len(*calls))
 	}
 
 	// Verify a destroy tower job was launched (PATCH with towerJobs.destroy).
@@ -1316,14 +1289,11 @@ func TestIntegrationDestroyWithCancelProvisionJob(t *testing.T) {
 		t.Error("expected a PATCH with towerJobs.destroy")
 	}
 
-	// Last call: continue 5m.
-	lastCall := (*calls)[len(*calls)-1]
-	if lastCall.Method != http.MethodPost {
-		t.Errorf("last call method = %s, want POST", lastCall.Method)
+	// ContinueAction now sets a directive instead of making a POST call.
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
-	if lastCall.Body["after"] != "5m" {
-		t.Errorf("after = %v, want 5m", lastCall.Body["after"])
-	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "5m")
 }
 
 func TestIntegrationProvisionDeployerDisabledSandbox(t *testing.T) {

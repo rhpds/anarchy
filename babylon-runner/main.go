@@ -37,8 +37,30 @@ func registerHandlers(r *Runner) {
 	r.handlers["action:status"] = handleStatus
 	r.handlers["action:update"] = handleUpdate
 
-	// Callback handlers
-	r.handlers["action:provision:complete"] = func(rc *RunContext) error {
-		return handleProvisionComplete(rc, nil, nil, nil)
+	// Callback handlers.
+	//
+	// Callbacks run as actionCallback runs. The operator assigns these
+	// runs to the runner pod via a K8s label update, but the
+	// runner_assignments dict is populated asynchronously through the
+	// K8s watch. Because the Go runner processes runs in milliseconds
+	// (vs seconds for the Ansible runner), SubjectUpdate PATCH calls
+	// race with the watch and fail with "not assigned to runner".
+	//
+	// Fix: callback handlers set ContinueAction("0s") to immediately
+	// trigger a new action run. The action run re-enters the handler
+	// (e.g. handleStart), which calls checkDeployerJob. That finds the
+	// Tower job succeeded and routes to the completion handler from an
+	// action context where PATCH calls work.
+	callbackContinue := func(rc *RunContext) error {
+		slog.Info("callback received, scheduling immediate action re-check",
+			"action", rc.ActionName, "subject", rc.SubjectName)
+		rc.ContinueAction("0s")
+		return nil
 	}
+	r.handlers["action:provision:complete"] = callbackContinue
+	r.handlers["action:destroy:complete"] = callbackContinue
+	r.handlers["action:start:complete"] = callbackContinue
+	r.handlers["action:stop:complete"] = callbackContinue
+	r.handlers["action:status:complete"] = callbackContinue
+	r.handlers["action:update:complete"] = callbackContinue
 }

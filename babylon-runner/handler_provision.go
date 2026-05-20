@@ -82,7 +82,8 @@ func runProvision(rc *RunContext) error {
 			}); err != nil {
 				return err
 			}
-			return rc.ContinueAction("30s")
+			rc.ContinueAction("30s")
+			return nil
 		}
 	}
 
@@ -96,7 +97,8 @@ func runProvision(rc *RunContext) error {
 			slog.Error("runProvision: tower launch failed", "subject", rc.SubjectName, "error", err)
 			return handleProvisionError(rc)
 		}
-		return rc.ContinueAction("5m")
+		rc.ContinueAction("5m")
+		return nil
 	}
 
 	// Deployer disabled and sandbox API in use: mark as started immediately.
@@ -369,7 +371,8 @@ func checkProvisionQueue(rc *RunContext) error {
 		}); err != nil {
 			return err
 		}
-		return rc.ContinueAction("30s")
+		rc.ContinueAction("30s")
+		return nil
 
 	default:
 		// Success: extract vars (no creds for subject), update subject, and restart provision.

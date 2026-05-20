@@ -205,9 +205,12 @@ func sandboxBook(rc *RunContext, accessToken string) (*SandboxResult, error) {
 	reqBody["annotations"] = annotations
 
 	// Add sandboxes/resources from __meta__ with var annotations injected.
+	// Resolve Jinja2 expressions (e.g. {{ job_vars.namespace_suffix | default('dev') }})
+	// before sending to the sandbox API.
 	if meta != nil {
 		if sandboxes, ok := meta["sandboxes"].([]interface{}); ok {
-			reqBody["resources"] = injectVarAnnotations(sandboxes)
+			resolved := resolveJ2(sandboxes, j2VarContext(rc)).([]interface{})
+			reqBody["resources"] = injectVarAnnotations(resolved)
 		}
 	}
 

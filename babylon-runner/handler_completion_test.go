@@ -18,9 +18,9 @@ func TestHandleDestroyFailureError(t *testing.T) {
 		t.Fatalf("handleDestroyFailure returned error: %v", err)
 	}
 
-	// Should have 2 calls: PATCH state update + POST continue action.
-	if len(*calls) != 2 {
-		t.Fatalf("expected 2 calls, got %d", len(*calls))
+	// Should have 1 call: PATCH state update. ContinueAction now sets a directive.
+	if len(*calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(*calls))
 	}
 
 	// First call: PATCH with destroy-error state.
@@ -40,13 +40,9 @@ func TestHandleDestroyFailureError(t *testing.T) {
 		t.Errorf("current_state = %v, want destroy-error", vars["current_state"])
 	}
 
-	// Second call: POST continue action (retry).
-	c1 := (*calls)[1]
-	if c1.Method != http.MethodPost {
-		t.Errorf("call[1] method = %s, want POST", c1.Method)
-	}
-	if c1.Body["action"] != "destroy" {
-		t.Errorf("action = %v, want destroy", c1.Body["action"])
+	// Verify continueActionDirective was set (retry).
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
 
 	// Should NOT have finished (retry via ContinueAction).
@@ -66,9 +62,9 @@ func TestHandleDestroyFailureCanceled(t *testing.T) {
 		t.Fatalf("handleDestroyFailure returned error: %v", err)
 	}
 
-	// Should have 2 calls: PATCH state update + POST continue action.
-	if len(*calls) != 2 {
-		t.Fatalf("expected 2 calls, got %d", len(*calls))
+	// Should have 1 call: PATCH state update. ContinueAction now sets a directive.
+	if len(*calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(*calls))
 	}
 
 	// First call: PATCH with destroy-canceled state.
@@ -80,14 +76,11 @@ func TestHandleDestroyFailureCanceled(t *testing.T) {
 		t.Errorf("state label = %v, want destroy-canceled", labels["state"])
 	}
 
-	// Second call: POST continue with 1m interval.
-	c1 := (*calls)[1]
-	if c1.Method != http.MethodPost {
-		t.Errorf("call[1] method = %s, want POST", c1.Method)
+	// Verify continueActionDirective with 1m interval.
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
-	if c1.Body["after"] != "1m" {
-		t.Errorf("after = %v, want 1m", c1.Body["after"])
-	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "1m")
 
 	// Should NOT have finished (destroy always retries).
 	if rc.finished {
@@ -886,9 +879,9 @@ func TestHandleStartFailureRetryWhenDesiredStarted(t *testing.T) {
 		t.Fatalf("handleStartFailure returned error: %v", err)
 	}
 
-	// Should have 2 calls: PATCH + POST continue.
-	if len(*calls) != 2 {
-		t.Fatalf("expected 2 calls, got %d", len(*calls))
+	// Should have 1 call: PATCH. ContinueAction now sets a directive.
+	if len(*calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(*calls))
 	}
 
 	// Verify state set to start-error.
@@ -900,18 +893,12 @@ func TestHandleStartFailureRetryWhenDesiredStarted(t *testing.T) {
 		t.Errorf("current_state = %v, want start-error", vars["current_state"])
 	}
 
-	// Verify continue action with retry (not finish).
-	c1 := (*calls)[1]
-	if c1.Method != http.MethodPost {
-		t.Errorf("call[1] method = %s, want POST", c1.Method)
-	}
-	if c1.Body["action"] != "start" {
-		t.Errorf("action = %v, want start", c1.Body["action"])
+	// Verify continueActionDirective with retry (not finish).
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
 	// First retry interval should be "1m".
-	if c1.Body["after"] != "1m" {
-		t.Errorf("after = %v, want 1m", c1.Body["after"])
-	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "1m")
 
 	if rc.finished {
 		t.Error("expected FinishAction NOT to be called (should retry)")
@@ -931,8 +918,8 @@ func TestHandleStartFailureCanceledRetry(t *testing.T) {
 		t.Fatalf("handleStartFailure returned error: %v", err)
 	}
 
-	if len(*calls) != 2 {
-		t.Fatalf("expected 2 calls, got %d", len(*calls))
+	if len(*calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(*calls))
 	}
 
 	// Verify state label.
@@ -944,11 +931,11 @@ func TestHandleStartFailureCanceledRetry(t *testing.T) {
 		t.Errorf("state label = %v, want start-canceled", labels["state"])
 	}
 
-	// Verify fixed 1m retry.
-	c1 := (*calls)[1]
-	if c1.Body["after"] != "1m" {
-		t.Errorf("after = %v, want 1m", c1.Body["after"])
+	// Verify fixed 1m retry via directive.
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "1m")
 
 	if rc.finished {
 		t.Error("expected FinishAction NOT to be called")
@@ -1069,9 +1056,9 @@ func TestHandleStopFailureRetryWhenDesiredStopped(t *testing.T) {
 		t.Fatalf("handleStopFailure returned error: %v", err)
 	}
 
-	// Should have 2 calls: PATCH + POST continue.
-	if len(*calls) != 2 {
-		t.Fatalf("expected 2 calls, got %d", len(*calls))
+	// Should have 1 call: PATCH. ContinueAction now sets a directive.
+	if len(*calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(*calls))
 	}
 
 	c0 := (*calls)[0]
@@ -1082,13 +1069,11 @@ func TestHandleStopFailureRetryWhenDesiredStopped(t *testing.T) {
 		t.Errorf("current_state = %v, want stop-error", vars["current_state"])
 	}
 
-	c1 := (*calls)[1]
-	if c1.Body["action"] != "stop" {
-		t.Errorf("action = %v, want stop", c1.Body["action"])
+	// Verify continueActionDirective with retry.
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
-	if c1.Body["after"] != "1m" {
-		t.Errorf("after = %v, want 1m (first retry)", c1.Body["after"])
-	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "1m")
 
 	if rc.finished {
 		t.Error("expected FinishAction NOT to be called (should retry)")
@@ -1108,8 +1093,8 @@ func TestHandleStopFailureCanceledRetry(t *testing.T) {
 		t.Fatalf("handleStopFailure returned error: %v", err)
 	}
 
-	if len(*calls) != 2 {
-		t.Fatalf("expected 2 calls, got %d", len(*calls))
+	if len(*calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(*calls))
 	}
 
 	c0 := (*calls)[0]
@@ -1120,10 +1105,11 @@ func TestHandleStopFailureCanceledRetry(t *testing.T) {
 		t.Errorf("state label = %v, want stop-canceled", labels["state"])
 	}
 
-	c1 := (*calls)[1]
-	if c1.Body["after"] != "1m" {
-		t.Errorf("after = %v, want 1m", c1.Body["after"])
+	// Verify fixed 1m retry via directive.
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "1m")
 
 	if rc.finished {
 		t.Error("expected FinishAction NOT to be called")
@@ -1313,8 +1299,8 @@ func TestHandleUpdateFailureRetry(t *testing.T) {
 		t.Fatalf("handleUpdateFailure returned error: %v", err)
 	}
 
-	if len(*calls) != 2 {
-		t.Fatalf("expected 2 calls (PATCH + continue), got %d", len(*calls))
+	if len(*calls) != 1 {
+		t.Fatalf("expected 1 call (PATCH), got %d", len(*calls))
 	}
 
 	// Verify state.
@@ -1331,13 +1317,9 @@ func TestHandleUpdateFailureRetry(t *testing.T) {
 		t.Errorf("healthy = %v, want false", vars["healthy"])
 	}
 
-	// Verify continue action (retry at current interval, no increment).
-	c1 := (*calls)[1]
-	if c1.Method != http.MethodPost {
-		t.Errorf("call[1] method = %s, want POST", c1.Method)
-	}
-	if c1.Body["action"] != "update" {
-		t.Errorf("action = %v, want update", c1.Body["action"])
+	// Verify continueActionDirective (retry at current interval, no increment).
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
 
 	if rc.finished {
@@ -1355,15 +1337,15 @@ func TestHandleUpdateFailureCanceled(t *testing.T) {
 		t.Fatalf("handleUpdateFailure returned error: %v", err)
 	}
 
-	if len(*calls) != 2 {
-		t.Fatalf("expected 2 calls (PATCH + continue), got %d", len(*calls))
+	if len(*calls) != 1 {
+		t.Fatalf("expected 1 call (PATCH), got %d", len(*calls))
 	}
 
-	// Verify fixed 1m retry for canceled.
-	c1 := (*calls)[1]
-	if c1.Body["after"] != "1m" {
-		t.Errorf("after = %v, want 1m", c1.Body["after"])
+	// Verify fixed 1m retry for canceled via directive.
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "1m")
 
 	if rc.finished {
 		t.Error("expected FinishAction NOT to be called")

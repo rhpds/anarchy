@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,21 +31,21 @@ func NewAnarchyClient(cfg Config) *AnarchyClient {
 
 // SubjectUpdate sends a PATCH request to update a subject's metadata, spec,
 // or status. It retries on failure up to 3 times with increasing delays.
-func (a *AnarchyClient) SubjectUpdate(subjectName string, patch SubjectPatch) error {
+func (a *AnarchyClient) SubjectUpdate(ctx context.Context, subjectName string, patch SubjectPatch) error {
 	url := fmt.Sprintf("%s/run/subject/%s", a.cfg.AnarchyURL, subjectName)
-	return a.doWithRetry(http.MethodPatch, url, patch)
+	return a.doWithRetry(ctx, http.MethodPatch, url, patch)
 }
 
 // ScheduleAction sends a POST request to schedule an action on a subject.
 // It retries on failure up to 3 times with increasing delays.
-func (a *AnarchyClient) ScheduleAction(subjectName string, req ScheduleActionRequest) error {
+func (a *AnarchyClient) ScheduleAction(ctx context.Context, subjectName string, req ScheduleActionRequest) error {
 	url := fmt.Sprintf("%s/run/subject/%s/actions", a.cfg.AnarchyURL, subjectName)
-	return a.doWithRetry(http.MethodPost, url, req)
+	return a.doWithRetry(ctx, http.MethodPost, url, req)
 }
 
 // doWithRetry performs an HTTP request with JSON body, retrying up to
 // len(retryDelays) times on non-200 responses or transport errors.
-func (a *AnarchyClient) doWithRetry(method, url string, body interface{}) error {
+func (a *AnarchyClient) doWithRetry(ctx context.Context, method, url string, body interface{}) error {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("marshal request body: %w", err)
@@ -56,10 +57,14 @@ func (a *AnarchyClient) doWithRetry(method, url string, body interface{}) error 
 		if attempt > 0 {
 			delay := retryDelays[attempt-1]
 			slog.Warn("retrying request", "method", method, "url", url, "delay", delay, "attempt", attempt+1, "maxAttempts", maxAttempts)
-			time.Sleep(delay)
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 
-		req, err := http.NewRequest(method, url, bytes.NewReader(data))
+		req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(data))
 		if err != nil {
 			return fmt.Errorf("create request: %w", err)
 		}
@@ -68,6 +73,9 @@ func (a *AnarchyClient) doWithRetry(method, url string, body interface{}) error 
 
 		resp, err := a.client.Do(req)
 		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			lastErr = fmt.Errorf("%s %s: %w", method, url, err)
 			continue
 		}

@@ -12,14 +12,16 @@ func checkDeployerJob(rc *RunContext, action string) error {
 	actionJob := getNestedMap(towerJobs, action)
 	if actionJob == nil {
 		slog.Warn("checkDeployerJob: no tower job found", "action", action, "subject", rc.SubjectName)
-		return rc.ContinueAction("5m")
+		rc.ContinueAction("5m")
+		return nil
 	}
 
 	// Extract deployerJob (float64 → int).
 	deployerJobFloat, ok := actionJob["deployerJob"].(float64)
 	if !ok {
 		slog.Warn("checkDeployerJob: deployerJob not found or not a number", "action", action, "subject", rc.SubjectName)
-		return rc.ContinueAction("5m")
+		rc.ContinueAction("5m")
+		return nil
 	}
 	deployerJob := int(deployerJobFloat)
 
@@ -28,20 +30,23 @@ func checkDeployerJob(rc *RunContext, action string) error {
 	towerHost, _ := actionJob["towerHost"].(string)
 	if towerHost == "" {
 		slog.Warn("checkDeployerJob: no towerHost in job status", "action", action, "subject", rc.SubjectName)
-		return rc.ContinueAction("5m")
+		rc.ContinueAction("5m")
+		return nil
 	}
 
 	tc, err := getTowerClientForHost(rc, towerHost)
 	if err != nil {
 		slog.Error("checkDeployerJob: failed to get tower client", "host", towerHost, "action", action, "subject", rc.SubjectName, "error", err)
-		return rc.ContinueAction("5m")
+		rc.ContinueAction("5m")
+		return nil
 	}
 
 	// Create OAuth token
 	token, tokenID, err := tc.CreateOAuthToken()
 	if err != nil {
 		slog.Error("checkDeployerJob: failed to create oauth token", "action", action, "subject", rc.SubjectName, "error", err)
-		return rc.ContinueAction("5m")
+		rc.ContinueAction("5m")
+		return nil
 	}
 	defer func() {
 		if delErr := tc.DeleteOAuthToken(tokenID); delErr != nil {
@@ -53,14 +58,16 @@ func checkDeployerJob(rc *RunContext, action string) error {
 	jobStatus, err := tc.GetJobStatus(token, deployerJob)
 	if err != nil {
 		slog.Error("checkDeployerJob: failed to get job status", "action", action, "job", deployerJob, "subject", rc.SubjectName, "error", err)
-		return rc.ContinueAction("5m")
+		rc.ContinueAction("5m")
+		return nil
 	}
 
 	// Extract status field
 	status, ok := jobStatus["status"].(string)
 	if !ok {
 		slog.Warn("checkDeployerJob: status field not found or not a string", "action", action, "job", deployerJob, "subject", rc.SubjectName)
-		return rc.ContinueAction("5m")
+		rc.ContinueAction("5m")
+		return nil
 	}
 
 	// Route based on status
@@ -72,7 +79,8 @@ func checkDeployerJob(rc *RunContext, action string) error {
 	default:
 		// Job still running (pending, waiting, running)
 		slog.Info("checkDeployerJob: job still running", "job", deployerJob, "status", status, "action", action, "subject", rc.SubjectName)
-		return rc.ContinueAction("5m")
+		rc.ContinueAction("5m")
+		return nil
 	}
 }
 
@@ -90,10 +98,10 @@ func actionRetryInterval(retryCount int) string {
 }
 
 // continueWithRetry continues the action with an incremented retry count.
-func continueWithRetry(rc *RunContext) error {
+func continueWithRetry(rc *RunContext) {
 	count := rc.ActionRetryCount()
 	interval := actionRetryInterval(count)
-	return rc.ContinueActionWithVars(interval, map[string]interface{}{
+	rc.ContinueActionWithVars(interval, map[string]interface{}{
 		"action_retry_count": count + 1,
 	})
 }
@@ -190,9 +198,11 @@ func handleDestroyFailure(rc *RunContext, status string) error {
 
 	// Canceled uses fixed 1m retry; error/failed use dynamic backoff.
 	if status == "canceled" {
-		return rc.ContinueAction("1m")
+		rc.ContinueAction("1m")
+		return nil
 	}
-	return continueWithRetry(rc)
+	continueWithRetry(rc)
+	return nil
 }
 
 // handleStartFailure handles start job error/failure.
@@ -247,9 +257,11 @@ func handleStartFailure(rc *RunContext, status string) error {
 	if desiredState == "started" && !rc.IsBeingDeleted() {
 		// Canceled uses fixed 1m retry; error/failed use dynamic backoff.
 		if status == "canceled" {
-			return rc.ContinueAction("1m")
+			rc.ContinueAction("1m")
+		return nil
 		}
-		return continueWithRetry(rc)
+		continueWithRetry(rc)
+	return nil
 	}
 	if desiredState == "stopped" && !rc.IsBeingDeleted() {
 		return rc.ScheduleAction(ScheduleActionRequest{
@@ -333,9 +345,11 @@ func handleStopFailure(rc *RunContext, status string) error {
 	if desiredState == "stopped" && !rc.IsBeingDeleted() {
 		// Canceled uses fixed 1m retry; error/failed use dynamic backoff.
 		if status == "canceled" {
-			return rc.ContinueAction("1m")
+			rc.ContinueAction("1m")
+		return nil
 		}
-		return continueWithRetry(rc)
+		continueWithRetry(rc)
+	return nil
 	}
 	if desiredState == "started" && !rc.IsBeingDeleted() {
 		return rc.ScheduleAction(ScheduleActionRequest{
@@ -430,10 +444,12 @@ func handleUpdateFailure(rc *RunContext, status string) error {
 		// Canceled uses fixed 1m retry; error/failed use current interval
 		// without incrementing retry count (matching Ansible behavior).
 		if status == "canceled" {
-			return rc.ContinueAction("1m")
+			rc.ContinueAction("1m")
+		return nil
 		}
 		interval := actionRetryInterval(rc.ActionRetryCount())
-		return rc.ContinueAction(interval)
+		rc.ContinueAction(interval)
+		return nil
 	}
 	rc.FinishAction(status)
 	return nil

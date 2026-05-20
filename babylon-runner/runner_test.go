@@ -755,7 +755,7 @@ func TestPostResultSuccess(t *testing.T) {
 		},
 	}
 
-	err := r.postResult("test-run", result)
+	err := r.postResult(context.Background(), "test-run", result)
 	if err != nil {
 		t.Fatalf("postResult returned error: %v", err)
 	}
@@ -790,7 +790,7 @@ func TestPostResultRetryThenSuccess(t *testing.T) {
 		},
 	}
 
-	err := r.postResult("test-run", result)
+	err := r.postResult(context.Background(), "test-run", result)
 	if err != nil {
 		t.Fatalf("postResult returned error: %v", err)
 	}
@@ -859,6 +859,74 @@ func TestDispatchUnregisteredHandler(t *testing.T) {
 	}
 }
 
+// TestCallbackHandlerSetsContinueAction verifies that callback handlers
+// (actionCallback runs) set ContinueAction("0s") to trigger an immediate
+// re-poll via the action handler path, instead of calling SubjectUpdate
+// (which races with K8s watch assignment).
+func TestCallbackHandlerSetsContinueAction(t *testing.T) {
+	actions := []string{"provision", "destroy", "start", "stop", "status", "update"}
+
+	for _, action := range actions {
+		t.Run(action, func(t *testing.T) {
+			var postBody RunResult
+			runName := "test-callback-" + action
+
+			payload := RunPayload{
+				Handler: Handler{
+					Type: "actionCallback",
+					Name: "complete",
+				},
+				Subject: map[string]interface{}{
+					"metadata": map[string]interface{}{"name": "test-subject"},
+				},
+				Run: map[string]interface{}{
+					"metadata": map[string]interface{}{"name": runName},
+				},
+				Action: map[string]interface{}{
+					"spec": map[string]interface{}{"action": action},
+				},
+			}
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodGet && r.URL.Path == "/run":
+					json.NewEncoder(w).Encode(payload)
+				case r.Method == http.MethodPost && r.URL.Path == "/run/"+runName:
+					json.NewDecoder(r.Body).Decode(&postBody)
+					w.WriteHeader(http.StatusOK)
+				default:
+					t.Errorf("unexpected request: %s %s (callback should NOT call SubjectUpdate)", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusBadRequest)
+				}
+			}))
+			defer server.Close()
+
+			cfg := Config{
+				AnarchyURL: server.URL, RunnerName: "runner",
+				PodName: "pod", RunnerToken: "token", RequestTimeout: 5,
+			}
+			runner := NewRunner(cfg)
+			registerHandlers(runner)
+
+			err := runner.pollOnce(context.Background())
+			if err != nil {
+				t.Fatalf("pollOnce returned error: %v", err)
+			}
+
+			// Callback should set ContinueAction, not FinishAction.
+			if postBody.Result.ContinueAction == nil {
+				t.Fatal("expected ContinueAction directive in result")
+			}
+			if postBody.Result.FinishAction != nil {
+				t.Error("callback should NOT set FinishAction (let the action handler do it)")
+			}
+			if postBody.Result.Status != "successful" {
+				t.Errorf("result status = %q, want successful", postBody.Result.Status)
+			}
+		})
+	}
+}
+
 func TestPollOnceIncludesDirectives(t *testing.T) {
 	var postBody RunResult
 	runName := "test-run-directives"
@@ -919,16 +987,16 @@ func TestPollOnceIncludesDirectives(t *testing.T) {
 		t.Fatalf("pollOnce returned error: %v", err)
 	}
 
-	if postBody.FinishAction == nil {
+	if postBody.Result.FinishAction == nil {
 		t.Fatal("FinishAction directive should not be nil")
 	}
-	if postBody.FinishAction.State != "successful" {
-		t.Errorf("FinishAction.State = %q, want %q", postBody.FinishAction.State, "successful")
+	if postBody.Result.FinishAction.State != "successful" {
+		t.Errorf("FinishAction.State = %q, want %q", postBody.Result.FinishAction.State, "successful")
 	}
-	if postBody.DeleteSubject == nil {
+	if postBody.Result.DeleteSubject == nil {
 		t.Fatal("DeleteSubject directive should not be nil")
 	}
-	if postBody.DeleteSubject.RemoveFinalizers != true {
-		t.Errorf("DeleteSubject.RemoveFinalizers = %v, want true", postBody.DeleteSubject.RemoveFinalizers)
+	if postBody.Result.DeleteSubject.RemoveFinalizers != true {
+		t.Errorf("DeleteSubject.RemoveFinalizers = %v, want true", postBody.Result.DeleteSubject.RemoveFinalizers)
 	}
 }

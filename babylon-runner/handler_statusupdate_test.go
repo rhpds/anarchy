@@ -27,9 +27,9 @@ func TestHandleStatusPending(t *testing.T) {
 		t.Fatalf("handleStatus returned error: %v", err)
 	}
 
-	// Should have: set startTimestamp, launch tower job (patch with towerJobs), continue action.
-	if len(*calls) < 3 {
-		t.Fatalf("expected at least 3 calls, got %d", len(*calls))
+	// Should have: set startTimestamp, launch tower job (patch with towerJobs). ContinueAction sets a directive.
+	if len(*calls) < 2 {
+		t.Fatalf("expected at least 2 calls, got %d", len(*calls))
 	}
 
 	// First call: PATCH to set startTimestamp.
@@ -54,20 +54,11 @@ func TestHandleStatusPending(t *testing.T) {
 		t.Errorf("skip_update_processing = %v, want true", patch["skip_update_processing"])
 	}
 
-	// Last call: POST to continue action.
-	lastCall := (*calls)[len(*calls)-1]
-	if lastCall.Method != http.MethodPost {
-		t.Errorf("last call method = %s, want POST", lastCall.Method)
+	// ContinueAction now sets a directive instead of making a POST call.
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
-	if lastCall.Path != "/run/subject/test-subject/actions" {
-		t.Errorf("last call path = %s, want /run/subject/test-subject/actions", lastCall.Path)
-	}
-	if lastCall.Body["action"] != "status" {
-		t.Errorf("action = %v, want status", lastCall.Body["action"])
-	}
-	if lastCall.Body["after"] != "5m" {
-		t.Errorf("after = %v, want 5m", lastCall.Body["after"])
-	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "5m")
 }
 
 func TestHandleStatusRunning(t *testing.T) {
@@ -86,17 +77,14 @@ func TestHandleStatusRunning(t *testing.T) {
 		t.Fatalf("handleStatus returned error: %v", err)
 	}
 
-	if len(*calls) != 1 {
-		t.Fatalf("expected 1 call (checkDeployerJob stub), got %d", len(*calls))
+	// checkDeployerJob stub calls ContinueAction, which now sets a directive (no API call).
+	if len(*calls) != 0 {
+		t.Fatalf("expected 0 calls (ContinueAction sets directive), got %d", len(*calls))
 	}
 
-	// checkDeployerJob stub calls ContinueAction.
-	c0 := (*calls)[0]
-	if c0.Method != http.MethodPost {
-		t.Errorf("call[0] method = %s, want POST", c0.Method)
-	}
-	if c0.Body["action"] != "status" {
-		t.Errorf("action = %v, want status", c0.Body["action"])
+	// Verify continueActionDirective was set.
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
 }
 
@@ -122,22 +110,16 @@ func TestHandleUpdateNotUpdating(t *testing.T) {
 		t.Fatalf("handleUpdate returned error: %v", err)
 	}
 
-	// Should have: launch tower job (patch), continue action.
-	if len(*calls) < 2 {
-		t.Fatalf("expected at least 2 calls, got %d", len(*calls))
+	// Should have: launch tower job (patch). ContinueAction sets a directive.
+	if len(*calls) < 1 {
+		t.Fatalf("expected at least 1 call, got %d", len(*calls))
 	}
 
-	// Last call: POST to continue action.
-	lastCall := (*calls)[len(*calls)-1]
-	if lastCall.Method != http.MethodPost {
-		t.Errorf("last call method = %s, want POST", lastCall.Method)
+	// ContinueAction now sets a directive instead of making a POST call.
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
-	if lastCall.Body["action"] != "update" {
-		t.Errorf("action = %v, want update", lastCall.Body["action"])
-	}
-	if lastCall.Body["after"] != "5m" {
-		t.Errorf("after = %v, want 5m", lastCall.Body["after"])
-	}
+	assertAfterTimestamp(t, rc.continueActionDirective.After, "5m")
 }
 
 func TestHandleUpdateUpdating(t *testing.T) {
@@ -156,16 +138,13 @@ func TestHandleUpdateUpdating(t *testing.T) {
 		t.Fatalf("handleUpdate returned error: %v", err)
 	}
 
-	if len(*calls) != 1 {
-		t.Fatalf("expected 1 call (checkDeployerJob stub), got %d", len(*calls))
+	// checkDeployerJob stub calls ContinueAction, which now sets a directive (no API call).
+	if len(*calls) != 0 {
+		t.Fatalf("expected 0 calls (ContinueAction sets directive), got %d", len(*calls))
 	}
 
-	// checkDeployerJob stub calls ContinueAction.
-	c0 := (*calls)[0]
-	if c0.Method != http.MethodPost {
-		t.Errorf("call[0] method = %s, want POST", c0.Method)
-	}
-	if c0.Body["action"] != "update" {
-		t.Errorf("action = %v, want update", c0.Body["action"])
+	// Verify continueActionDirective was set.
+	if rc.continueActionDirective == nil {
+		t.Fatal("expected continueActionDirective to be set")
 	}
 }

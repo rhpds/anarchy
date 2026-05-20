@@ -2,68 +2,102 @@
 # Run the Go babylon-runner locally against a port-forwarded anarchy API.
 #
 # What it does:
-#   1. Ensures at least one Python runner pod exists (scales up if needed)
-#   2. Reads the pod name + token from it
-#   3. Starts the Go runner impersonating that pod
-#
-# Both the real pod and the Go runner will poll. The Go runner may need
-# a few cycles to win the race. To guarantee the Go runner handles all
-# runs, scale the pool to exactly 1 before running this script:
-#   oc patch anarchyrunner default -n <ns> --type merge \
-#     -p '{"spec":{"minReplicas":1,"maxReplicas":1}}'
+#   1. Starts port-forward to the anarchy service
+#   2. Creates a lightweight dev pod (sleep infinity) with the right labels
+#      and a known token so the anarchy API recognizes it as a real runner.
+#   3. Builds and runs the Go runner using that pod identity.
+#   4. Cleans up everything on exit.
 #
 # Prerequisites:
 #   - oc login to your dev cluster
-#   - oc port-forward svc/anarchy -n <namespace> 5000:5000 (in another terminal)
 
 set -euo pipefail
 
 NAMESPACE="${ANARCHY_NAMESPACE:-babylon-anarchy-test}"
 RUNNER="${RUNNER_NAME:-default}"
+DEV_POD="babylon-runner-godev"
+DEV_TOKEN=$(python3 -c "import random, string; print(''.join(random.choices(string.ascii_lowercase + string.digits, k=24)))")
+PORT_FORWARD_PID=""
 
-# --- Get a runner pod to read identity from ---
+# --- Save original runner replicas ---
 
-POD=$(oc get pods -n "$NAMESPACE" \
-  -l "anarchy.gpte.redhat.com/runner=$RUNNER" \
-  --field-selector=status.phase=Running \
-  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+ORIG_MIN=$(oc get anarchyrunner "$RUNNER" -n "$NAMESPACE" -o jsonpath='{.spec.minReplicas}' 2>/dev/null || echo "1")
+ORIG_MAX=$(oc get anarchyrunner "$RUNNER" -n "$NAMESPACE" -o jsonpath='{.spec.maxReplicas}' 2>/dev/null || echo "3")
 
-if [[ -z "$POD" ]]; then
-  echo "No running runner pod found — scaling up one..."
+# --- Cleanup on exit ---
+
+cleanup() {
+  echo ""
+  echo "Cleaning up..."
+  if [[ -n "$PORT_FORWARD_PID" ]]; then
+    kill "$PORT_FORWARD_PID" 2>/dev/null || true
+    wait "$PORT_FORWARD_PID" 2>/dev/null || true
+  fi
+  oc delete pod "$DEV_POD" -n "$NAMESPACE" --ignore-not-found --wait=false 2>/dev/null || true
+  echo "Restoring runner replicas (min=$ORIG_MIN, max=$ORIG_MAX)..."
   oc patch anarchyrunner "$RUNNER" -n "$NAMESPACE" --type merge \
-    -p '{"spec":{"minReplicas":1,"maxReplicas":1}}'
-  echo "Waiting for runner pod to start..."
-  oc wait --for=condition=Ready pod \
-    -l "anarchy.gpte.redhat.com/runner=$RUNNER" \
-    -n "$NAMESPACE" --timeout=120s
-  POD=$(oc get pods -n "$NAMESPACE" \
-    -l "anarchy.gpte.redhat.com/runner=$RUNNER" \
-    --field-selector=status.phase=Running \
-    -o jsonpath='{.items[0].metadata.name}')
-fi
+    -p "{\"spec\":{\"minReplicas\":$ORIG_MIN,\"maxReplicas\":$ORIG_MAX}}" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
 
-if [[ -z "$POD" ]]; then
-  echo "ERROR: could not find or create a runner pod" >&2
+# --- Start port-forward ---
+
+echo "Starting port-forward to svc/anarchy in $NAMESPACE..."
+oc port-forward svc/anarchy -n "$NAMESPACE" 5000:5000 &
+PORT_FORWARD_PID=$!
+sleep 2
+
+# Check it's alive.
+if ! kill -0 "$PORT_FORWARD_PID" 2>/dev/null; then
+  echo "ERROR: port-forward failed to start" >&2
   exit 1
 fi
 
-# --- Extract the token ---
+# --- Scale down Python runners ---
 
-TOKEN=$(oc get pod "$POD" -n "$NAMESPACE" \
-  -o jsonpath='{.spec.containers[?(@.name=="runner")].env[?(@.name=="RUNNER_TOKEN")].value}')
+echo "Scaling down Python runners..."
+oc patch anarchyrunner "$RUNNER" -n "$NAMESPACE" --type merge \
+  -p '{"spec":{"minReplicas":0,"maxReplicas":0}}'
+# Delete existing runner pods immediately (operator is slow to reconcile).
+oc delete pods -n "$NAMESPACE" -l "anarchy.gpte.redhat.com/runner=$RUNNER" --wait=false 2>/dev/null || true
 
-if [[ -z "$TOKEN" ]]; then
-  echo "ERROR: could not extract RUNNER_TOKEN from pod $POD" >&2
-  exit 1
-fi
+# --- Create a dev runner pod ---
+
+# Delete any leftover dev pod from a previous run and wait for it to be gone.
+oc delete pod "$DEV_POD" -n "$NAMESPACE" --ignore-not-found --wait=true 2>/dev/null || true
+
+echo "Creating dev runner pod $DEV_POD..."
+cat <<EOF | oc create -n "$NAMESPACE" -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${DEV_POD}
+  labels:
+    anarchy.gpte.redhat.com/runner: ${RUNNER}
+spec:
+  containers:
+  - name: runner
+    image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+    command: ["sleep", "infinity"]
+    env:
+    - name: RUNNER_TOKEN
+      value: "${DEV_TOKEN}"
+    - name: RUNNER_NAME
+      value: "${RUNNER}"
+EOF
+
+echo "Waiting for dev pod to be ready..."
+oc wait --for=condition=Ready pod/"$DEV_POD" -n "$NAMESPACE" --timeout=60s
 
 # --- Run ---
 
 export ANARCHY_URL="${ANARCHY_URL:-http://localhost:5000}"
+export ANARCHY_NAMESPACE="$NAMESPACE"
 export RUNNER_NAME="$RUNNER"
-export RUNNER_TOKEN="$TOKEN"
-export HOSTNAME="$POD"
+export RUNNER_TOKEN="$DEV_TOKEN"
+export HOSTNAME="$DEV_POD"
 
+echo ""
 echo "ANARCHY_URL=$ANARCHY_URL"
 echo "RUNNER_NAME=$RUNNER_NAME"
 echo "RUNNER_TOKEN=${RUNNER_TOKEN:0:8}..."
@@ -72,4 +106,5 @@ echo ""
 echo "Building..."
 go build -o "${TMPDIR:-/tmp}/babylon-runner" . || exit 1
 echo "Starting babylon-runner... (Ctrl+C to stop)"
-exec "${TMPDIR:-/tmp}/babylon-runner"
+# Can't exec here — need the trap to fire for cleanup.
+"${TMPDIR:-/tmp}/babylon-runner"

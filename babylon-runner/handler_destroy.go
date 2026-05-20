@@ -85,7 +85,8 @@ func runDestroy(rc *RunContext) error {
 		return err
 	}
 
-	return rc.ContinueAction("5m")
+	rc.ContinueAction("5m")
+	return nil
 }
 
 // handleDestroyComplete finalizes a successful destroy.

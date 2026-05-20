@@ -12,6 +12,60 @@ import (
 	"strings"
 )
 
+const vaultVarChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+// insertUnvaultString transforms vault-encrypted values in a map into
+// Jinja2 lookup expressions so Tower can decrypt them at runtime.
+// Matches the Python insert_unvault_string filter from babylon_anarchy_governor.
+//
+// Any string value starting with "$ANSIBLE_VAULT;" is replaced with
+// {{ lookup('unvault_string', __vaulted_value_XXXX) }} and the original
+// encrypted blob is stored in a sibling key at the top level.
+func insertUnvaultString(vars map[string]interface{}) map[string]interface{} {
+	vaultedValues := make(map[string]string)
+	result := unvaultRecurse(vars, vaultedValues).(map[string]interface{})
+	for k, v := range vaultedValues {
+		result[k] = v
+	}
+	return result
+}
+
+func unvaultRecurse(value interface{}, vaulted map[string]string) interface{} {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(v))
+		for k, val := range v {
+			out[k] = unvaultRecurse(val, vaulted)
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(v))
+		for i, val := range v {
+			out[i] = unvaultRecurse(val, vaulted)
+		}
+		return out
+	case string:
+		if strings.HasPrefix(strings.TrimSpace(v), "$ANSIBLE_VAULT;") {
+			var varName string
+			for {
+				b := make([]byte, 12)
+				for i := range b {
+					b[i] = vaultVarChars[rand.Intn(len(vaultVarChars))]
+				}
+				varName = "__vaulted_value_" + string(b)
+				if _, exists := vaulted[varName]; !exists {
+					break
+				}
+			}
+			vaulted[varName] = v
+			return "{{ lookup('unvault_string', " + varName + ") }}"
+		}
+		return v
+	default:
+		return v
+	}
+}
+
 // TowerJobConfig holds the parameters for launching a job on Tower/AAP2.
 type TowerJobConfig struct {
 	Organization  string
@@ -220,6 +274,10 @@ func (tc *TowerClient) CancelJob(oauthToken string, jobID int) error {
 	}
 	defer resp.Body.Close()
 
+	// 405 means the job already finished — nothing to cancel, which is fine.
+	if resp.StatusCode == http.StatusMethodNotAllowed {
+		return nil
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("POST %s: status %d", url, resp.StatusCode)
 	}
@@ -369,7 +427,8 @@ func (tc *TowerClient) associateChild(oauthToken string, parentPath string, pare
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("POST %s: status %d", reqURL, resp.StatusCode)
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("POST %s: status %d: %s", reqURL, resp.StatusCode, string(respBody))
 	}
 	return nil
 }
@@ -402,7 +461,7 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 	}
 
 	// Step 3: Ensure inventory.
-	_, err = tc.ensureResource(token, "/api/v2/inventories/", map[string]interface{}{
+	invID, err := tc.ensureResource(token, "/api/v2/inventories/", map[string]interface{}{
 		"name":         config.Inventory,
 		"organization": float64(orgID),
 	})
@@ -490,6 +549,8 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 	}
 
 	// Step 7: Create job template (with retry via project update).
+	// extra_vars are set on the template (matching Ansible awx.awx.job_template),
+	// NOT at launch time. The launch only passes inventory.
 	templateData := map[string]interface{}{
 		"name":                    config.TemplateName,
 		"project":                 float64(projID),
@@ -501,6 +562,13 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 	}
 	if eeID > 0 {
 		templateData["execution_environment"] = float64(eeID)
+	}
+	if config.ExtraVars != nil {
+		extraVarsJSON, err := json.Marshal(config.ExtraVars)
+		if err != nil {
+			return 0, fmt.Errorf("marshal extra_vars: %w", err)
+		}
+		templateData["extra_vars"] = string(extraVarsJSON)
 	}
 
 	tmplID, err := tc.ensureResource(token, "/api/v2/job_templates/", templateData)
@@ -532,13 +600,8 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 	}
 
 	// Step 9: Launch the job template (with retry via project update).
-	launchData := map[string]interface{}{}
-	if config.ExtraVars != nil {
-		extraVarsJSON, err := json.Marshal(config.ExtraVars)
-		if err != nil {
-			return 0, fmt.Errorf("marshal extra_vars: %w", err)
-		}
-		launchData["extra_vars"] = string(extraVarsJSON)
+	launchData := map[string]interface{}{
+		"inventory": float64(invID),
 	}
 
 	launchPath := fmt.Sprintf("/api/v2/job_templates/%d/launch/", tmplID)
