@@ -244,6 +244,12 @@ class AnarchyRun(AnarchyWatchObject):
             plural = self.plural,
             version = Anarchy.version,
         )
+        # Update local state immediately so that runner_state and
+        # runner_assignments are current before the K8s watch fires.
+        # Without this a fast runner (which processes runs in ~200ms)
+        # hits POST /run/{name} before the watch updates self.definition,
+        # causing "Runner state mismatch" 400 errors.
+        await self.update_definition(definition)
         await self.merge_patch_status({
             "runner": anarchy_runner.as_reference(),
             "runnerPod": anarchy_runner_pod.as_reference(),
