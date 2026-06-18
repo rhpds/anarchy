@@ -74,19 +74,16 @@ babylon-runner/
 │   │   ├── check_deployer.go    # Tower job polling + failure/success routing
 │   │   ├── sandbox.go           # Sandbox get/book/cleanup/start/stop
 │   │   └── tower_launch.go      # Tower job assembly + launch
-│   ├── anarchy/
-│   │   └── client.go            # Anarchy API client (SubjectUpdate, ScheduleAction, etc.)
-│   ├── tower/
-│   │   └── client.go            # Tower/AAP2 client (LaunchJob, GetJobStatus, OAuth)
-│   ├── sandbox/
-│   │   └── client.go            # Sandbox API client (Login, BookPlacement, etc.)
+│   ├── clients/
+│   │   ├── anarchy.go           # Anarchy API client (SubjectUpdate, ScheduleAction, etc.)
+│   │   ├── tower.go             # Tower/AAP2 client (LaunchJob, GetJobStatus, OAuth)
+│   │   ├── sandbox.go           # Sandbox API client (Login, BookPlacement, etc.)
+│   │   └── scheduler.go         # Controller scheduler client (Evaluate)
 │   ├── httputil/
 │   │   ├── transport.go         # Shared http.Transport factory (TLS config, connection pooling)
 │   │   ├── retry.go             # retryWithContext, pollWithContext helpers
 │   │   ├── json.go              # DoJSON request/response helper
 │   │   └── instrument.go        # Prometheus-instrumented HTTP round-tripper
-│   ├── scheduler/
-│   │   └── client.go            # Controller scheduler client (Evaluate)
 │   ├── template/
 │   │   └── engine.go            # Jinja2/pongo2 template engine
 │   └── types/
@@ -94,6 +91,7 @@ babylon-runner/
 │       ├── result.go            # RunResult, directives (Finish, Continue, Delete)
 │       ├── patch.go             # SubjectPatch, ScheduleActionRequest
 │       └── helpers.go           # nowUTC, deepMergeMap, extractStringSlice
+├── Makefile
 ├── go.mod
 ├── go.sum
 ├── Dockerfile
@@ -106,10 +104,7 @@ babylon-runner/
 
 - **`runner/`** — polling loop, dispatch, config parsing (env var defaults, required var validation)
 - **`handler/`** — correct API calls, state transitions, and retry scheduling per handler (mock external clients)
-- **`anarchy/`** — request construction, response parsing, retry behavior
-- **`tower/`** — controller selection, job launch, status polling, OAuth lifecycle
-- **`sandbox/`** — login, booking, placement lifecycle, token caching
-- **`scheduler/`** — evaluate request/response, fallback on failure, timeout handling
+- **`clients/`** — one `*_test.go` per client file: anarchy (request construction, response parsing, retry behavior), tower (controller selection, job launch, status polling, OAuth lifecycle), sandbox (login, booking, placement lifecycle, token caching), scheduler (evaluate request/response, fallback on failure, timeout handling)
 - **`httputil/`** — retry with context cancellation, poll timeout, JSON marshal/unmarshal, TLS config
 - **`template/`** — all supported Jinja2 constructs, silent failure detection, caching
 - **`types/`** — deep merge, nested accessors, JSON serialization round-trip
@@ -319,10 +314,10 @@ Move hardcoded operational constants to the Config struct with env vars and sens
 
 **New env vars:**
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `SANDBOX_API_URL` | `http://sandbox-api.babylon-sandbox-api.svc.cluster.local:8080` | Sandbox API base URL. Runner and Sandbox API run in the same cluster, accessed via K8s service layer (plain HTTP). |
-| `ACTION_RETRY_INTERVALS` | `1m,5m,10m,30m,1h,2h,4h,8h,16h,1d` | Comma-separated list of retry intervals for failed actions. |
+| Variable                 | Default                                                         | Description                                                                                                        |
+| ------------------------ | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `SANDBOX_API_URL`        | `http://sandbox-api.babylon-sandbox-api.svc.cluster.local:8080` | Sandbox API base URL. Runner and Sandbox API run in the same cluster, accessed via K8s service layer (plain HTTP). |
+| `ACTION_RETRY_INTERVALS` | `1m,5m,10m,30m,1h,2h,4h,8h,16h,1d`                              | Comma-separated list of retry intervals for failed actions.                                                        |
 
 These are added to the existing Config struct in `internal/runner/config.go` alongside `ANARCHY_URL`, `POLLING_INTERVAL`, etc.
 
@@ -566,14 +561,14 @@ func InstrumentedTransport(next http.RoundTripper,
 
 **How each client uses it:**
 
-| Client      | Transport                        | Retry                                                              | JSON     | Metrics                 |
-| ----------- | -------------------------------- | ------------------------------------------------------------------ | -------- | ----------------------- |
-| `anarchy`   | `NewTransport(nil)` (plain HTTP) | `RetryWithContext` with `[5s, 10s, 20s]`                           | `DoJSON` | `InstrumentedTransport` |
-| `tower`     | `NewTransport(tlsConfig)` (CA)   | `RetryWithContext` where needed                                    | `DoJSON` | `InstrumentedTransport` |
-| `sandbox`   | `NewTransport(nil)` (plain HTTP) | `RetryWithContext` for login/actions, `PollWithContext` for status | `DoJSON` | `InstrumentedTransport` |
-| `scheduler` | `NewTransport(tlsConfig)` (CA)   | `RetryWithContext` with `[3s, 3s]` (2 retries)                     | `DoJSON` | `InstrumentedTransport` |
+| Client                 | Transport                        | Retry                                                              | JSON     | Metrics                 |
+| ---------------------- | -------------------------------- | ------------------------------------------------------------------ | -------- | ----------------------- |
+| `clients/anarchy.go`   | `NewTransport(nil)` (plain HTTP) | `RetryWithContext` with `[5s, 10s, 20s]`                           | `DoJSON` | `InstrumentedTransport` |
+| `clients/tower.go`     | `NewTransport(tlsConfig)` (CA)   | `RetryWithContext` where needed                                    | `DoJSON` | `InstrumentedTransport` |
+| `clients/sandbox.go`   | `NewTransport(nil)` (plain HTTP) | `RetryWithContext` for login/actions, `PollWithContext` for status | `DoJSON` | `InstrumentedTransport` |
+| `clients/scheduler.go` | `NewTransport(tlsConfig)` (CA)   | `RetryWithContext` with `[3s, 3s]` (2 retries)                     | `DoJSON` | `InstrumentedTransport` |
 
-All functions above are from the `httputil` package.
+All clients live in the `clients` package and import helpers from `httputil`.
 
 **What stays in each client:**
 
@@ -725,7 +720,7 @@ func getTowerClientForAction(rc *RunContext) (*TowerClient, string, error) {
 
 **Graceful fallback:** Matching the Ansible behavior (`ignore_errors: true`), the Go implementation must never fail the run if the scheduler is unavailable. Log a warning and fall back to local selection.
 
-**New package:** `internal/scheduler/` — lives alongside the other API clients. Uses `httputil.DoJSON` and `httputil.RetryWithContext` from change #14.
+**Location:** `internal/clients/scheduler.go` — lives alongside the other API clients in the `clients` package. Uses `httputil.DoJSON` and `httputil.RetryWithContext` from change #14.
 
 ## New Dependencies
 
@@ -739,23 +734,23 @@ func getTowerClientForAction(rc *RunContext) (*TowerClient, string, error) {
 
 Changes are independent and can be implemented incrementally:
 
-**Phase 1 — Correctness (blocking for production):**
+**Phase 1 — Structure (do first to avoid rework):**
+
+- #1 Project structure — restructure flat `package main` into `internal/` packages. All subsequent changes target the new layout.
+- #14 Shared HTTP infrastructure (`internal/httputil`) — must land with #1, as clients depend on it
+- #15 Makefile — lands with #1, as build path changes with project structure
+- #2 Typed payloads
+- #3 Kubernetes client (client-go) — initialized in main, passed via struct (no `internal/k8s/` package)
+
+**Phase 2 — Correctness (blocking for production):**
 
 - #10 Deep merge
-- #13 Missing guid (or absorbed by #7)
+- #13 Missing guid
 - #4 Context propagation
 - #5 TLS configuration
 - #7 Configuration for hardcoded constants (SANDBOX_API_URL, ACTION_RETRY_INTERVALS)
 - GAP-1 Panic recovery in dispatch loop
 - GAP-3 Status handler finish when deployer disabled
-
-**Phase 2 — Structure (enables sustainable development):**
-
-- #1 Project structure
-- #14 Shared HTTP infrastructure (`internal/httputil`) — must land before or with #1, as clients depend on it
-- #15 Makefile — should land with or after #1, as build path changes with project structure
-- #2 Typed payloads
-- #3 Kubernetes client (client-go) — initialized in main, passed via struct (no `internal/k8s/` package)
 
 **Phase 3 — Production readiness:**
 
