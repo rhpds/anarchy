@@ -83,7 +83,8 @@ babylon-runner/
 │   │   ├── transport.go         # Shared http.Transport factory (TLS config, connection pooling)
 │   │   ├── retry.go             # retryWithContext, pollWithContext helpers
 │   │   ├── json.go              # DoJSON request/response helper
-│   │   └── instrument.go        # Prometheus-instrumented HTTP round-tripper
+│   │   ├── instrument.go        # Prometheus-instrumented HTTP round-tripper
+│   │   └── token_cache.go       # Thread-safe token cache with TTL and refresh callback
 │   ├── template/
 │   │   └── engine.go            # Jinja2/pongo2 template engine
 │   └── types/
@@ -105,7 +106,7 @@ babylon-runner/
 - **`runner/`** — polling loop, dispatch, config parsing (env var defaults, required var validation)
 - **`handler/`** — correct API calls, state transitions, and retry scheduling per handler (mock external clients)
 - **`clients/`** — one `*_test.go` per client file: anarchy (request construction, response parsing, retry behavior), tower (controller selection, job launch, status polling, OAuth lifecycle), sandbox (login, booking, placement lifecycle, token caching), scheduler (evaluate request/response, fallback on failure, timeout handling)
-- **`httputil/`** — retry with context cancellation, poll timeout, JSON marshal/unmarshal, TLS config
+- **`httputil/`** — retry with context cancellation, poll timeout, JSON marshal/unmarshal, TLS config, token cache (TTL expiry, refresh, thread-safety, cleanup)
 - **`template/`** — all supported Jinja2 constructs, silent failure detection, caching
 - **`types/`** — deep merge, nested accessors, JSON serialization round-trip
 
@@ -277,13 +278,98 @@ Make TLS verification configurable instead of hardcoded `InsecureSkipVerify: tru
 
 **K8s TLS:** Handled automatically by `client-go` (uses cluster CA from serviceaccount).
 
-### 6. HTTP Client Reuse and Tower Token Caching
+### 6. HTTP Client Reuse and Token Caching
 
 **Problem 1:** `getTowerClientForAction` creates a new `TowerClient` (with new `http.Transport`) on every call. Each `checkDeployerJob` (every 5 minutes) creates a new client, makes HTTP calls, and discards the transport.
 
 **Problem 2:** Each `TowerClient` operation creates and deletes an OAuth token. Sequential operations on the same controller repeat the cycle.
 
-**Proposed:**
+**Problem 3 (GAP-2):** Each sandbox operation (`sandboxGet`, `sandboxBook`, `sandboxStart`, `sandboxStop`, `sandboxCleanup`) independently calls `sandboxLogin`, creating a new access token every time. A single provision handler may call `sandboxGet` then `sandboxBook`, performing two login round-trips.
+
+**Proposed — shared `httputil.TokenCache`:**
+
+Tower and Sandbox follow the same token lifecycle: obtain a token, reuse it until it expires, refresh when needed. Instead of implementing token management independently in each client, extract a generic `TokenCache` into `httputil/token_cache.go`:
+
+```go
+// httputil/token_cache.go
+type TokenCache struct {
+    mu      sync.RWMutex
+    token   string
+    expiry  time.Time
+    refresh func(ctx context.Context) (token string, ttl time.Duration, err error)
+    cleanup func(ctx context.Context, token string) error  // optional
+}
+
+type TokenCacheOption func(*TokenCache)
+
+func WithCleanup(fn func(ctx context.Context, token string) error) TokenCacheOption {
+    return func(c *TokenCache) { c.cleanup = fn }
+}
+
+func NewTokenCache(refresh func(context.Context) (string, time.Duration, error), opts ...TokenCacheOption) *TokenCache
+
+// Get returns a valid token, refreshing if expired or missing.
+// Thread-safe with double-check locking.
+func (c *TokenCache) Get(ctx context.Context) (string, error) {
+    c.mu.RLock()
+    if c.token != "" && time.Now().Before(c.expiry) {
+        defer c.mu.RUnlock()
+        return c.token, nil
+    }
+    c.mu.RUnlock()
+
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    if c.token != "" && time.Now().Before(c.expiry) {
+        return c.token, nil
+    }
+    token, ttl, err := c.refresh(ctx)
+    if err != nil {
+        return "", err
+    }
+    c.token = token
+    c.expiry = time.Now().Add(ttl)
+    return token, nil
+}
+
+// Close cleans up the current token (e.g., Tower DELETE /api/v2/tokens/{id}).
+// No-op if no cleanup function was provided (e.g., Sandbox tokens expire on their own).
+func (c *TokenCache) Close(ctx context.Context) error {
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    if c.cleanup != nil && c.token != "" {
+        err := c.cleanup(ctx, c.token)
+        c.token = ""
+        return err
+    }
+    c.token = ""
+    return nil
+}
+```
+
+**How each client uses it:**
+
+```go
+// clients/tower.go — OAuth token with cleanup
+tokenCache := httputil.NewTokenCache(
+    func(ctx context.Context) (string, time.Duration, error) {
+        // POST /api/v2/tokens/ → return token, 30*time.Minute, nil
+    },
+    httputil.WithCleanup(func(ctx context.Context, token string) error {
+        // DELETE /api/v2/tokens/{id}/
+    }),
+)
+defer tokenCache.Close(ctx)
+
+// clients/sandbox.go — login token, no cleanup needed
+tokenCache := httputil.NewTokenCache(
+    func(ctx context.Context) (string, time.Duration, error) {
+        // POST /token with credentials → return accessToken, 1*time.Hour, nil
+    },
+)
+```
+
+**Tower client pool** (unchanged — Tower-specific because it has multiple controllers):
 
 ```go
 type TowerClientPool struct {
@@ -306,7 +392,9 @@ func (p *TowerClientPool) Get(hostname, username, password string) *TowerClient 
 }
 ```
 
-For token caching, add a `cachedToken` field to `TowerClient` with TTL, avoiding create/delete on every operation.
+Each `TowerClient` in the pool holds its own `httputil.TokenCache` instance. The pool reuses clients (and their cached tokens) across calls to the same controller.
+
+**What stays in each client:** Auth-specific logic (how to obtain/delete tokens) lives in the refresh/cleanup callbacks. The `TokenCache` only manages the lifecycle (thread-safety, TTL, refresh-on-expiry).
 
 ### 7. Configuration for Hardcoded Constants
 
@@ -787,15 +875,13 @@ if err := dispatch(rc, r.handlers); err != nil {
 
 **Severity:** High — in production with 203 pods, a panic loses the runner pod. The operator creates a new pod but the current run's result is lost (the operator eventually times it out and marks it as "lost", delaying the next retry by minutes).
 
-### GAP-2: Sandbox API Token Not Cached (add to spec — absorb into #6)
+### GAP-2: Sandbox API Token Not Cached (absorbed into #6)
 
 **File:** `handler_sandbox.go:64-75`
 
 Each sandbox operation (`sandboxGet`, `sandboxBook`, `sandboxStart`, `sandboxStop`, `sandboxCleanup`) independently calls `sandboxLogin`, creating a new access token every time. A single provision handler may call `sandboxGet` then `sandboxBook`, performing two login round-trips to the same API.
 
-Spec #6 proposes Tower token caching but does not mention Sandbox API token caching. The same caching pattern should apply: cache the access token on `RunContext` or in a per-handler scope.
-
-**Fix:** Add a `sandboxAccessToken` cache to `RunContext` (scoped per run execution), populated on first login and reused for subsequent sandbox calls within the same handler.
+**Fix:** Resolved by change #6 — the Sandbox client uses `httputil.TokenCache` with the login flow as its refresh callback. The token is cached and reused automatically across operations within the same client instance.
 
 ### GAP-3: Status Handler Orphans Action When Deployer Disabled (add to spec — Phase 1)
 
