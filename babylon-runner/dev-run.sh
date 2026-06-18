@@ -19,11 +19,6 @@ DEV_POD="babylon-runner-godev"
 DEV_TOKEN=$(python3 -c "import random, string; print(''.join(random.choices(string.ascii_lowercase + string.digits, k=24)))")
 PORT_FORWARD_PID=""
 
-# --- Save original runner replicas ---
-
-ORIG_MIN=$(oc get anarchyrunner "$RUNNER" -n "$NAMESPACE" -o jsonpath='{.spec.minReplicas}' 2>/dev/null || echo "1")
-ORIG_MAX=$(oc get anarchyrunner "$RUNNER" -n "$NAMESPACE" -o jsonpath='{.spec.maxReplicas}' 2>/dev/null || echo "3")
-
 # --- Cleanup on exit ---
 
 cleanup() {
@@ -34,9 +29,6 @@ cleanup() {
     wait "$PORT_FORWARD_PID" 2>/dev/null || true
   fi
   oc delete pod "$DEV_POD" -n "$NAMESPACE" --ignore-not-found --wait=false 2>/dev/null || true
-  echo "Restoring runner replicas (min=$ORIG_MIN, max=$ORIG_MAX)..."
-  oc patch anarchyrunner "$RUNNER" -n "$NAMESPACE" --type merge \
-    -p "{\"spec\":{\"minReplicas\":$ORIG_MIN,\"maxReplicas\":$ORIG_MAX}}" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
@@ -52,14 +44,6 @@ if ! kill -0 "$PORT_FORWARD_PID" 2>/dev/null; then
   echo "ERROR: port-forward failed to start" >&2
   exit 1
 fi
-
-# --- Scale down Python runners ---
-
-echo "Scaling down Python runners..."
-oc patch anarchyrunner "$RUNNER" -n "$NAMESPACE" --type merge \
-  -p '{"spec":{"minReplicas":0,"maxReplicas":0}}'
-# Delete existing runner pods immediately (operator is slow to reconcile).
-oc delete pods -n "$NAMESPACE" -l "anarchy.gpte.redhat.com/runner=$RUNNER" --wait=false 2>/dev/null || true
 
 # --- Create a dev runner pod ---
 
@@ -96,6 +80,7 @@ export ANARCHY_NAMESPACE="$NAMESPACE"
 export RUNNER_NAME="$RUNNER"
 export RUNNER_TOKEN="$DEV_TOKEN"
 export HOSTNAME="$DEV_POD"
+export POLLING_INTERVAL="${POLLING_INTERVAL:-1}"
 
 echo ""
 echo "ANARCHY_URL=$ANARCHY_URL"
