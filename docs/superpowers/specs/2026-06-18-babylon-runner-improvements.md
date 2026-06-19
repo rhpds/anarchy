@@ -8,8 +8,8 @@ This spec addresses structural, performance, correctness, and maintainability is
 
 | Phase       | Theme       | Changes                            | Status      |
 | ----------- | ----------- | ---------------------------------- | ----------- |
-| **Phase 1** | Foundation  | #1, #2, #3, #14, #15               | In Progress |
-| **Phase 2** | Correctness | #4, #5, #7, #10, #13, GAP-1, GAP-3 | Not Started |
+| **Phase 1** | Foundation  | #1, #2, #3, #14, #15               | Completed   |
+| **Phase 2** | Correctness | #4, #5, #7, #10, #13, GAP-1, GAP-3 | Completed   |
 | **Phase 3** | Production  | #6, #8, #9, #12, #16, #17          | Not Started |
 
 **Phase 1 — Foundation:** Restructure from flat `package main` to standard Go layout, add typed payloads, and establish shared HTTP infrastructure. All subsequent changes target the new layout.
