@@ -44,12 +44,23 @@ func handleEventCreate(rc *runner.RunContext) error {
 			}
 		}
 
-		// Only set the 3 specific fields in job_vars (matching Ansible).
+		// Build jobVarsPatch with cloud_provider, platform, uuid.
 		// anarchy_subject_update deep-merges into existing job_vars.
 		jobVarsPatch := map[string]interface{}{
 			"cloud_provider": cloudProvider,
 			"platform":       platform,
 			"uuid":           subjectUUID,
+		}
+
+		// guid: only set if not already present (defaults to uuid).
+		if sjv := rc.JobVars(); sjv != nil {
+			if _, ok := sjv["guid"].(string); !ok {
+				// guid not set -> initialize to uuid
+				jobVarsPatch["guid"] = subjectUUID
+			}
+		} else {
+			// No job_vars yet -> initialize guid to uuid
+			jobVarsPatch["guid"] = subjectUUID
 		}
 
 		if err := rc.SubjectUpdate(types.SubjectPatch{

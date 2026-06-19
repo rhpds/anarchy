@@ -69,6 +69,85 @@ func TestHandleEventCreate(t *testing.T) {
 	}
 }
 
+func TestHandleEventCreateSetsGUID(t *testing.T) {
+	server, calls := newTestAnarchyServer(t)
+	defer server.Close()
+
+	rc := newTestRunContext(t, server)
+
+	if err := handleEventCreate(rc); err != nil {
+		t.Fatalf("handleEventCreate returned error: %v", err)
+	}
+
+	if len(*calls) != 2 {
+		t.Fatalf("expected 2 calls, got %d", len(*calls))
+	}
+
+	// First call: PATCH subject update.
+	c0 := (*calls)[0]
+	if c0.Method != http.MethodPatch {
+		t.Errorf("call[0] method = %s, want PATCH", c0.Method)
+	}
+
+	// Verify guid is set and equals uuid in job_vars.
+	patch := c0.Body["patch"].(map[string]interface{})
+	spec := patch["spec"].(map[string]interface{})
+	vars := spec["vars"].(map[string]interface{})
+	jv := vars["job_vars"].(map[string]interface{})
+
+	uuid, ok := jv["uuid"].(string)
+	if !ok || uuid == "" {
+		t.Fatal("uuid not set in job_vars")
+	}
+
+	guid, ok := jv["guid"].(string)
+	if !ok || guid == "" {
+		t.Error("guid not set in job_vars patch")
+	}
+
+	if guid != uuid {
+		t.Errorf("guid (%q) should equal uuid (%q)", guid, uuid)
+	}
+}
+
+func TestHandleEventCreatePreservesExistingGUID(t *testing.T) {
+	server, calls := newTestAnarchyServer(t)
+	defer server.Close()
+
+	rc := newTestRunContext(t, server)
+
+	// Pre-set a guid in the subject job_vars.
+	existingGUID := "existing-guid-123"
+	rc.Payload.Subject.Spec.Vars.JobVars = map[string]interface{}{
+		"guid": existingGUID,
+	}
+
+	if err := handleEventCreate(rc); err != nil {
+		t.Fatalf("handleEventCreate returned error: %v", err)
+	}
+
+	if len(*calls) != 2 {
+		t.Fatalf("expected 2 calls, got %d", len(*calls))
+	}
+
+	// First call: PATCH subject update.
+	c0 := (*calls)[0]
+	patch := c0.Body["patch"].(map[string]interface{})
+	spec := patch["spec"].(map[string]interface{})
+	vars := spec["vars"].(map[string]interface{})
+	jv := vars["job_vars"].(map[string]interface{})
+
+	// guid should NOT be in the patch (already exists).
+	if _, ok := jv["guid"]; ok {
+		t.Error("guid should not be patched when it already exists")
+	}
+
+	// uuid should still be in the patch.
+	if _, ok := jv["uuid"]; !ok {
+		t.Error("uuid should be in the patch")
+	}
+}
+
 func TestHandleEventCreateAlreadyInitialized(t *testing.T) {
 	server, calls := newTestAnarchyServer(t)
 	defer server.Close()
