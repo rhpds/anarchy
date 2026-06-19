@@ -420,11 +420,9 @@ func TestBuildJobExtraVars(t *testing.T) {
 			name:   "custom callback var names from deployer config",
 			action: "provision",
 			setup: func(rc *runner.RunContext) {
-				// Raw __meta__.deployer fields for callback_url_var / callback_token_var
-				// must be accessible through GovernorAllVars. Set via Extra (not typed Meta)
-				// so GetNestedMap can find them as map[string]interface{}.
 				rc.Payload.Governor.Spec.Vars.Meta = nil
-				rc.Payload.Governor.Spec.Vars.Extra = map[string]interface{}{
+				rc.Payload.Governor.Spec.Vars.Extra = nil
+				rc.Payload.Governor.Spec.Vars.JobVars = map[string]interface{}{
 					"__meta__": map[string]interface{}{
 						"deployer": map[string]interface{}{
 							"callback_url_var":   "custom_callback_url",
@@ -432,7 +430,6 @@ func TestBuildJobExtraVars(t *testing.T) {
 						},
 					},
 				}
-				rc.Payload.Governor.Spec.Vars.JobVars = map[string]interface{}{}
 				rc.Payload.Subject.Spec.Vars.JobVars = map[string]interface{}{
 					"uuid": "xyz789",
 				}
@@ -455,10 +452,9 @@ func TestBuildJobExtraVars(t *testing.T) {
 			name:   "action extra_vars from deployer config override ACTION default",
 			action: "provision",
 			setup: func(rc *runner.RunContext) {
-				// Raw __meta__.deployer.actions.provision.extra_vars must be
-				// accessible through GovernorAllVars. Set via Extra (not typed Meta).
 				rc.Payload.Governor.Spec.Vars.Meta = nil
-				rc.Payload.Governor.Spec.Vars.Extra = map[string]interface{}{
+				rc.Payload.Governor.Spec.Vars.Extra = nil
+				rc.Payload.Governor.Spec.Vars.JobVars = map[string]interface{}{
 					"__meta__": map[string]interface{}{
 						"deployer": map[string]interface{}{
 							"actions": map[string]interface{}{
@@ -472,7 +468,6 @@ func TestBuildJobExtraVars(t *testing.T) {
 						},
 					},
 				}
-				rc.Payload.Governor.Spec.Vars.JobVars = map[string]interface{}{}
 				rc.Payload.Subject.Spec.Vars.JobVars = map[string]interface{}{
 					"uuid": "xyz789",
 				}
@@ -524,13 +519,10 @@ func TestBuildJobExtraVars(t *testing.T) {
 			},
 		},
 		{
-			// scm_ref_var injection: the code reads scm_ref_var from
-			// rawDeployer (raw map via GetNestedMap) but reads SCMRef
-			// from the typed Meta struct. When typed Meta is set,
-			// AllVars() puts *Meta (not map[string]interface{}) at
-			// "__meta__", so rawDeployer is nil and scm_ref_var is
-			// not found. This is a known gap in the typed architecture;
-			// we test the actual behavior (no injection).
+			// scm_ref_var injection: rawDeployer is now accessible via
+			// AllVars() injecting Meta into job_vars, but scm_ref_var is
+			// not a field in DeployerMeta so it won't appear in rawDeployer.
+			// No injection occurs.
 			name:   "scm_ref_var injection - typed Meta path",
 			action: "provision",
 			setup: func(rc *runner.RunContext) {
@@ -548,20 +540,19 @@ func TestBuildJobExtraVars(t *testing.T) {
 				"uuid":       "xyz789",
 				"ACTION":     "provision",
 				"output_dir": "/tmp/output-xyz789",
-				// scm_ref_var injection does not occur: rawDeployer is nil
-				// because AllVars puts *Meta (struct) at "__meta__".
 			},
 		},
 		{
-			// Raw Extra path: rawDeployer is accessible but
-			// meta.Deployer.SCMRef is "" (Meta is nil, so rc.Meta()
-			// returns empty Meta with nil Deployer). scm_ref_var is
-			// found but SCMRef is empty, so no injection occurs.
-			name:   "scm_ref_var injection - raw Extra path",
+			// Raw path: __meta__ is in job_vars (raw map), so rawDeployer
+			// is accessible. But Meta is not auto-populated from programmatic
+			// job_vars, so meta.Deployer is nil and SCMRef is empty.
+			// scm_ref_var injection does not occur.
+			name:   "scm_ref_var injection - raw job_vars path",
 			action: "provision",
 			setup: func(rc *runner.RunContext) {
 				rc.Payload.Governor.Spec.Vars.Meta = nil
-				rc.Payload.Governor.Spec.Vars.Extra = map[string]interface{}{
+				rc.Payload.Governor.Spec.Vars.Extra = nil
+				rc.Payload.Governor.Spec.Vars.JobVars = map[string]interface{}{
 					"__meta__": map[string]interface{}{
 						"deployer": map[string]interface{}{
 							"scm_ref":     "v2.0.0",
@@ -569,7 +560,6 @@ func TestBuildJobExtraVars(t *testing.T) {
 						},
 					},
 				}
-				rc.Payload.Governor.Spec.Vars.JobVars = map[string]interface{}{}
 				rc.Payload.Subject.Spec.Vars.JobVars = map[string]interface{}{
 					"uuid": "xyz789",
 				}
@@ -578,7 +568,6 @@ func TestBuildJobExtraVars(t *testing.T) {
 				"uuid":       "xyz789",
 				"ACTION":     "provision",
 				"output_dir": "/tmp/output-xyz789",
-				// scm_ref_var not injected: meta.Deployer is nil.
 			},
 		},
 		{

@@ -9,6 +9,7 @@ import (
 
 // handleDestroy routes a destroy action based on the current state.
 func handleDestroy(rc *runner.RunContext) error {
+	slog.Info("handling destroy", "subject", rc.SubjectName(), "state", rc.CurrentState())
 	currentState := rc.CurrentState()
 	actions := rc.StatusActions()
 	destroy := types.GetNestedMap(actions, "destroy")
@@ -94,6 +95,7 @@ func runDestroy(rc *runner.RunContext) error {
 
 // handleDestroyComplete finalizes a successful destroy.
 func handleDestroyComplete(rc *runner.RunContext) error {
+	slog.Info("destroy complete", "subject", rc.SubjectName())
 	// Sandbox API cleanup: release placement.
 	if rc.SandboxAPIInUse() {
 		if err := sandboxCleanup(rc); err != nil {

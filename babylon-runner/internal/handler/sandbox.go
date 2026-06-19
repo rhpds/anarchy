@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/rhpds/anarchy/babylon-runner/internal/clients"
+	"github.com/rhpds/anarchy/babylon-runner/internal/httputil"
 	"github.com/rhpds/anarchy/babylon-runner/internal/runner"
 	"github.com/rhpds/anarchy/babylon-runner/internal/template"
 	"github.com/rhpds/anarchy/babylon-runner/internal/types"
@@ -28,11 +30,15 @@ func sandboxAPIVars(rc *runner.RunContext) map[string]interface{} {
 	return rc.Payload.Governor.Spec.Vars.SandboxAPI
 }
 
-// getSandboxClient creates a SandboxAPIClient, using rc.SandboxBaseURL for tests.
-// URL source: governor.spec.vars.sandbox_api.sandbox_api_url (from varSecret),
-// matching the Ansible default: {{ sandbox_api.sandbox_api_url | default(...) }}.
-func getSandboxClient(rc *runner.RunContext) *clients.SandboxAPIClient {
-	baseURL := clients.DefaultSandboxAPIURL
+// getSandboxClient creates a SandboxAPIClient with integrated login.
+// URL priority: rc.SandboxBaseURL (test) > governor varSecret > rc.DefaultSandboxAPIURL (config).
+func getSandboxClient(rc *runner.RunContext) (*clients.SandboxAPIClient, error) {
+	loginToken := sandboxLoginToken(rc)
+	if loginToken == "" {
+		return nil, fmt.Errorf("no sandbox_api_login_token in governor sandbox_api secret")
+	}
+
+	baseURL := rc.DefaultSandboxAPIURL
 	if rc.SandboxBaseURL != "" {
 		baseURL = rc.SandboxBaseURL
 	} else {
@@ -43,7 +49,7 @@ func getSandboxClient(rc *runner.RunContext) *clients.SandboxAPIClient {
 			}
 		}
 	}
-	return clients.NewSandboxAPIClient(baseURL, rc.SandboxClientOpts...)
+	return clients.NewSandboxAPIClient(baseURL, loginToken, rc.SandboxClientOpts...), nil
 }
 
 // sandboxLoginToken returns the sandbox API login token from
@@ -58,22 +64,8 @@ func sandboxLoginToken(rc *runner.RunContext) string {
 	return token
 }
 
-// sandboxLogin authenticates with the sandbox API and returns an access token.
-func sandboxLogin(rc *runner.RunContext) (string, error) {
-	token := sandboxLoginToken(rc)
-	if token == "" {
-		return "", fmt.Errorf("no sandbox_api_login_token in governor sandbox_api secret")
-	}
-	client := getSandboxClient(rc)
-	accessToken, err := client.Login(token)
-	if err != nil {
-		return "", fmt.Errorf("sandbox login: %w", err)
-	}
-	return accessToken, nil
-}
-
 // sandboxGet performs the sandbox get workflow:
-//  1. Login to sandbox API
+//  1. Create sandbox API client (with integrated login)
 //  2. GET placement by UUID
 //  3. If error status -> return error result
 //  4. If found with resources -> extract vars, update subject
@@ -84,13 +76,13 @@ func sandboxGet(rc *runner.RunContext, action string) (*SandboxResult, error) {
 		return nil, fmt.Errorf("no uuid in job_vars")
 	}
 
-	accessToken, err := sandboxLogin(rc)
+	client, err := getSandboxClient(rc)
 	if err != nil {
 		return nil, err
 	}
 
-	client := getSandboxClient(rc)
-	placement, statusCode, err := client.GetPlacement(accessToken, uuid)
+	ctx := context.TODO()
+	placement, statusCode, err := client.GetPlacement(ctx, uuid)
 	if err != nil {
 		return nil, fmt.Errorf("get placement: %w", err)
 	}
@@ -98,7 +90,7 @@ func sandboxGet(rc *runner.RunContext, action string) (*SandboxResult, error) {
 	// Not found -- book if provision action.
 	if statusCode == http.StatusNotFound {
 		if action == "provision" && sandboxLoginToken(rc) != "" {
-			return sandboxBook(rc, accessToken)
+			return sandboxBook(rc, client)
 		}
 		return &SandboxResult{Status: "not-found"}, nil
 	}
@@ -151,7 +143,9 @@ func sandboxGet(rc *runner.RunContext, action string) (*SandboxResult, error) {
 }
 
 // sandboxBook books a new placement via the sandbox API.
-func sandboxBook(rc *runner.RunContext, accessToken string) (*SandboxResult, error) {
+// The client is passed from the caller (sandboxGet) so the same
+// token cache is reused.
+func sandboxBook(rc *runner.RunContext, client *clients.SandboxAPIClient) (*SandboxResult, error) {
 	uuid := rc.UUID()
 	guid := rc.GUID()
 	meta := rc.Meta()
@@ -210,8 +204,8 @@ func sandboxBook(rc *runner.RunContext, accessToken string) (*SandboxResult, err
 		reqBody["resources"] = injectVarAnnotations(resolved)
 	}
 
-	client := getSandboxClient(rc)
-	result, statusCode, err := client.BookPlacement(accessToken, reqBody)
+	ctx := context.TODO()
+	result, statusCode, err := client.BookPlacement(ctx, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("book placement: %w", err)
 	}
@@ -249,13 +243,13 @@ func sandboxCleanup(rc *runner.RunContext) error {
 		return nil
 	}
 
-	accessToken, err := sandboxLogin(rc)
+	client, err := getSandboxClient(rc)
 	if err != nil {
-		return fmt.Errorf("sandbox cleanup login: %w", err)
+		return fmt.Errorf("sandbox cleanup: %w", err)
 	}
 
-	client := getSandboxClient(rc)
-	if err := client.ReleasePlacement(accessToken, uuid); err != nil {
+	ctx := context.TODO()
+	if err := client.ReleasePlacement(ctx, uuid); err != nil {
 		return fmt.Errorf("release placement: %w", err)
 	}
 
@@ -270,13 +264,13 @@ func sandboxStart(rc *runner.RunContext) error {
 		return fmt.Errorf("no uuid for sandbox start")
 	}
 
-	accessToken, err := sandboxLogin(rc)
+	client, err := getSandboxClient(rc)
 	if err != nil {
 		return err
 	}
 
-	client := getSandboxClient(rc)
-	result, err := client.StartPlacement(accessToken, uuid)
+	ctx := context.TODO()
+	result, err := client.StartPlacement(ctx, uuid)
 	if err != nil {
 		return fmt.Errorf("start placement: %w", err)
 	}
@@ -307,7 +301,7 @@ func sandboxStart(rc *runner.RunContext) error {
 		return err
 	}
 
-	return pollSandboxRequest(client, accessToken, requestID)
+	return pollSandboxRequest(ctx, client, requestID)
 }
 
 // sandboxStop stops the sandbox placement and polls for completion.
@@ -317,13 +311,13 @@ func sandboxStop(rc *runner.RunContext) error {
 		return fmt.Errorf("no uuid for sandbox stop")
 	}
 
-	accessToken, err := sandboxLogin(rc)
+	client, err := getSandboxClient(rc)
 	if err != nil {
 		return err
 	}
 
-	client := getSandboxClient(rc)
-	result, err := client.StopPlacement(accessToken, uuid)
+	ctx := context.TODO()
+	result, err := client.StopPlacement(ctx, uuid)
 	if err != nil {
 		return fmt.Errorf("stop placement: %w", err)
 	}
@@ -354,39 +348,33 @@ func sandboxStop(rc *runner.RunContext) error {
 		return err
 	}
 
-	return pollSandboxRequest(client, accessToken, requestID)
+	return pollSandboxRequest(ctx, client, requestID)
 }
 
 // pollSandboxRequest polls a sandbox API async request until it completes.
-func pollSandboxRequest(client *clients.SandboxAPIClient, accessToken, requestID string) error {
-	maxAttempts := 120 // ~10 minutes at 5s intervals
-	pollInterval := 5 * time.Second
-
-	for i := 0; i < maxAttempts; i++ {
-		if i > 0 {
-			time.Sleep(pollInterval)
-		}
-
-		status, err := client.GetRequestStatus(accessToken, requestID)
+// Uses httputil.PollWithContext for cancellation-aware polling.
+func pollSandboxRequest(ctx context.Context, client *clients.SandboxAPIClient, requestID string) error {
+	return httputil.PollWithContext(ctx, 5*time.Second, 120, func() (bool, error) {
+		status, err := client.GetRequestStatus(ctx, requestID)
 		if err != nil {
 			slog.Error("pollSandboxRequest: error checking request", "requestID", requestID, "error", err)
-			continue
+			// Transient error — keep polling.
+			return false, nil
 		}
 
 		state, _ := status["status"].(string)
 		switch state {
 		case "success", "complete":
 			slog.Info("pollSandboxRequest: request completed successfully", "requestID", requestID)
-			return nil
+			return true, nil
 		case "error", "failed":
 			msg, _ := status["message"].(string)
-			return fmt.Errorf("sandbox request %s failed: %s", requestID, msg)
+			return true, fmt.Errorf("sandbox request %s failed: %s", requestID, msg)
 		default:
 			slog.Info("pollSandboxRequest: request still in progress", "requestID", requestID, "status", state)
+			return false, nil
 		}
-	}
-
-	return fmt.Errorf("sandbox request %s timed out after %d attempts", requestID, maxAttempts)
+	})
 }
 
 // injectVarAnnotations copies the "var" and "namespace_suffix" fields

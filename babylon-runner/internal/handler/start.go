@@ -9,6 +9,8 @@ import (
 
 // handleStart routes a start action based on the current state.
 func handleStart(rc *runner.RunContext) error {
+	slog.Info("handling start", "subject", rc.SubjectName(), "state", rc.CurrentState())
+
 	if rc.CurrentState() != "starting" {
 		return runStart(rc)
 	}
@@ -98,6 +100,7 @@ func runStart(rc *runner.RunContext) error {
 
 // handleStartComplete finalizes a successful start.
 func handleStartComplete(rc *runner.RunContext) error {
+	slog.Info("start complete", "subject", rc.SubjectName())
 	ts := types.NowUTC()
 
 	if err := rc.SubjectUpdate(types.SubjectPatch{

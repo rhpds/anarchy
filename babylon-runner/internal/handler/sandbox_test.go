@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -89,24 +90,10 @@ func TestSandboxLoginToken(t *testing.T) {
 	}
 }
 
-// --- TestSandboxLogin ---
+// --- TestGetSandboxClient ---
 
-func TestSandboxLogin(t *testing.T) {
-	t.Run("success - returns access token", func(t *testing.T) {
-		sandboxServer := newSimpleSandboxServer(t, map[string]http.HandlerFunc{
-			"/api/v1/login": func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != http.MethodPost {
-					t.Errorf("expected POST, got %s", r.Method)
-				}
-				auth := r.Header.Get("Authorization")
-				if auth != "Bearer test-login-token" {
-					t.Errorf("Authorization = %s, want 'Bearer test-login-token'", auth)
-				}
-				json.NewEncoder(w).Encode(map[string]string{"access_token": "access-123"})
-			},
-		})
-		defer sandboxServer.Close()
-
+func TestGetSandboxClient(t *testing.T) {
+	t.Run("success - creates client with login token", func(t *testing.T) {
 		anarchyServer, _ := newTestAnarchyServer(t)
 		defer anarchyServer.Close()
 
@@ -114,15 +101,15 @@ func TestSandboxLogin(t *testing.T) {
 		rc.Payload.Governor.Spec.Vars.SandboxAPI = map[string]interface{}{
 			"sandbox_api_login_token": "test-login-token",
 		}
-		rc.SandboxBaseURL = sandboxServer.URL
+		rc.SandboxBaseURL = "http://sandbox.example.com"
 		rc.SandboxClientOpts = []clients.SandboxAPIOption{clients.WithNoRetries()}
 
-		accessToken, err := sandboxLogin(rc)
+		client, err := getSandboxClient(rc)
 		if err != nil {
-			t.Fatalf("sandboxLogin() error = %v", err)
+			t.Fatalf("getSandboxClient() error = %v", err)
 		}
-		if accessToken != "access-123" {
-			t.Errorf("accessToken = %s, want 'access-123'", accessToken)
+		if client == nil {
+			t.Fatal("expected non-nil client")
 		}
 	})
 
@@ -132,19 +119,22 @@ func TestSandboxLogin(t *testing.T) {
 
 		rc := newTestRunContext(t, anarchyServer)
 
-		_, err := sandboxLogin(rc)
+		_, err := getSandboxClient(rc)
 		if err == nil {
 			t.Fatal("expected error when no login token, got nil")
 		}
-		if !strings.Contains(err.Error(), "no sandbox_api_login_token") {
+		if !strings.Contains(err.Error(), "sandbox_api_login_token") {
 			t.Errorf("error = %v, want error about sandbox_api_login_token", err)
 		}
 	})
 
-	t.Run("server error - returns error", func(t *testing.T) {
+	t.Run("URL from governor varSecret", func(t *testing.T) {
 		sandboxServer := newSimpleSandboxServer(t, map[string]http.HandlerFunc{
 			"/api/v1/login": func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]string{"access_token": "access-123"})
+			},
+			"/api/v1/placements/uuid-1": func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode(map[string]interface{}{"uuid": "uuid-1", "status": "ready"})
 			},
 		})
 		defer sandboxServer.Close()
@@ -155,16 +145,25 @@ func TestSandboxLogin(t *testing.T) {
 		rc := newTestRunContext(t, anarchyServer)
 		rc.Payload.Governor.Spec.Vars.SandboxAPI = map[string]interface{}{
 			"sandbox_api_login_token": "test-login-token",
+			"sandbox_api_url":         sandboxServer.URL,
 		}
-		rc.SandboxBaseURL = sandboxServer.URL
 		rc.SandboxClientOpts = []clients.SandboxAPIOption{clients.WithNoRetries()}
 
-		_, err := sandboxLogin(rc)
-		if err == nil {
-			t.Fatal("expected error when server returns 500, got nil")
+		client, err := getSandboxClient(rc)
+		if err != nil {
+			t.Fatalf("getSandboxClient() error = %v", err)
 		}
-		if !strings.Contains(err.Error(), "sandbox login") {
-			t.Errorf("error = %v, want 'sandbox login' error", err)
+
+		// Verify the client works by calling GetPlacement.
+		result, statusCode, err := client.GetPlacement(context.Background(), "uuid-1")
+		if err != nil {
+			t.Fatalf("GetPlacement() error = %v", err)
+		}
+		if statusCode != 200 {
+			t.Errorf("statusCode = %d, want 200", statusCode)
+		}
+		if result["uuid"] != "uuid-1" {
+			t.Errorf("uuid = %v, want uuid-1", result["uuid"])
 		}
 	})
 }
@@ -389,9 +388,18 @@ func TestSandboxGet(t *testing.T) {
 
 // --- TestSandboxBook ---
 
+// newTestSandboxClient creates a SandboxAPIClient pointing at the given
+// test server with retries disabled.
+func newTestSandboxClient(serverURL string) *clients.SandboxAPIClient {
+	return clients.NewSandboxAPIClient(serverURL, "test-login-token", clients.WithNoRetries())
+}
+
 func TestSandboxBook(t *testing.T) {
 	t.Run("status 200 - success with extracted vars", func(t *testing.T) {
 		sandboxServer := newSimpleSandboxServer(t, map[string]http.HandlerFunc{
+			"/api/v1/login": func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+			},
 			"/api/v1/placements": func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				json.NewEncoder(w).Encode(map[string]interface{}{
@@ -424,7 +432,8 @@ func TestSandboxBook(t *testing.T) {
 		rc := newTestRunContext(t, anarchyServer)
 		withSandboxEnabled(rc, sandboxServer, "test-uuid-123")
 
-		result, err := sandboxBook(rc, "access-token")
+		client := newTestSandboxClient(sandboxServer.URL)
+		result, err := sandboxBook(rc, client)
 		if err != nil {
 			t.Fatalf("sandboxBook() error = %v", err)
 		}
@@ -445,6 +454,9 @@ func TestSandboxBook(t *testing.T) {
 
 	t.Run("status 202 - queued", func(t *testing.T) {
 		sandboxServer := newSimpleSandboxServer(t, map[string]http.HandlerFunc{
+			"/api/v1/login": func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+			},
 			"/api/v1/placements": func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusAccepted)
 				json.NewEncoder(w).Encode(map[string]interface{}{
@@ -461,7 +473,8 @@ func TestSandboxBook(t *testing.T) {
 		rc := newTestRunContext(t, anarchyServer)
 		withSandboxEnabled(rc, sandboxServer, "test-uuid-123")
 
-		result, err := sandboxBook(rc, "access-token")
+		client := newTestSandboxClient(sandboxServer.URL)
+		result, err := sandboxBook(rc, client)
 		if err != nil {
 			t.Fatalf("sandboxBook() error = %v", err)
 		}
@@ -473,6 +486,9 @@ func TestSandboxBook(t *testing.T) {
 
 	t.Run("status 507 - queued (no capacity)", func(t *testing.T) {
 		sandboxServer := newSimpleSandboxServer(t, map[string]http.HandlerFunc{
+			"/api/v1/login": func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+			},
 			"/api/v1/placements": func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(507)
 				json.NewEncoder(w).Encode(map[string]interface{}{
@@ -488,7 +504,8 @@ func TestSandboxBook(t *testing.T) {
 		rc := newTestRunContext(t, anarchyServer)
 		withSandboxEnabled(rc, sandboxServer, "test-uuid-123")
 
-		result, err := sandboxBook(rc, "access-token")
+		client := newTestSandboxClient(sandboxServer.URL)
+		result, err := sandboxBook(rc, client)
 		if err != nil {
 			t.Fatalf("sandboxBook() error = %v", err)
 		}
@@ -500,6 +517,9 @@ func TestSandboxBook(t *testing.T) {
 
 	t.Run("other status - error", func(t *testing.T) {
 		sandboxServer := newSimpleSandboxServer(t, map[string]http.HandlerFunc{
+			"/api/v1/login": func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+			},
 			"/api/v1/placements": func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusBadRequest)
 				json.NewEncoder(w).Encode(map[string]interface{}{
@@ -515,7 +535,8 @@ func TestSandboxBook(t *testing.T) {
 		rc := newTestRunContext(t, anarchyServer)
 		withSandboxEnabled(rc, sandboxServer, "test-uuid-123")
 
-		result, err := sandboxBook(rc, "access-token")
+		client := newTestSandboxClient(sandboxServer.URL)
+		result, err := sandboxBook(rc, client)
 		if err == nil {
 			t.Fatal("expected error for status 400, got nil")
 		}
@@ -704,8 +725,8 @@ func TestSandboxStart(t *testing.T) {
 		withSandboxEnabled(rc, sandboxServer, "test-uuid-123")
 
 		err := sandboxStart(rc)
-		if err != nil && !strings.Contains(err.Error(), "sandbox login") {
-			t.Errorf("error = %v, want 'sandbox login' error", err)
+		if err == nil {
+			t.Fatal("expected error when login fails, got nil")
 		}
 	})
 }
@@ -773,8 +794,8 @@ func TestSandboxStop(t *testing.T) {
 		withSandboxEnabled(rc, sandboxServer, "test-uuid-123")
 
 		err := sandboxStop(rc)
-		if err != nil && !strings.Contains(err.Error(), "sandbox login") {
-			t.Errorf("error = %v, want 'sandbox login' error", err)
+		if err == nil {
+			t.Fatal("expected error when login fails, got nil")
 		}
 	})
 }
@@ -784,6 +805,9 @@ func TestSandboxStop(t *testing.T) {
 func TestPollSandboxRequest(t *testing.T) {
 	t.Run("status success - returns nil", func(t *testing.T) {
 		sandboxServer := newSimpleSandboxServer(t, map[string]http.HandlerFunc{
+			"/api/v1/login": func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+			},
 			"/api/v1/requests/req-1/status": func(w http.ResponseWriter, r *http.Request) {
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"status": "success",
@@ -792,8 +816,8 @@ func TestPollSandboxRequest(t *testing.T) {
 		})
 		defer sandboxServer.Close()
 
-		client := clients.NewSandboxAPIClient(sandboxServer.URL)
-		err := pollSandboxRequest(client, "access-token", "req-1")
+		client := newTestSandboxClient(sandboxServer.URL)
+		err := pollSandboxRequest(context.Background(), client, "req-1")
 		if err != nil {
 			t.Fatalf("pollSandboxRequest() error = %v", err)
 		}
@@ -801,6 +825,9 @@ func TestPollSandboxRequest(t *testing.T) {
 
 	t.Run("status complete - returns nil", func(t *testing.T) {
 		sandboxServer := newSimpleSandboxServer(t, map[string]http.HandlerFunc{
+			"/api/v1/login": func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+			},
 			"/api/v1/requests/req-2/status": func(w http.ResponseWriter, r *http.Request) {
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"status": "complete",
@@ -809,8 +836,8 @@ func TestPollSandboxRequest(t *testing.T) {
 		})
 		defer sandboxServer.Close()
 
-		client := clients.NewSandboxAPIClient(sandboxServer.URL)
-		err := pollSandboxRequest(client, "access-token", "req-2")
+		client := newTestSandboxClient(sandboxServer.URL)
+		err := pollSandboxRequest(context.Background(), client, "req-2")
 		if err != nil {
 			t.Fatalf("pollSandboxRequest() error = %v", err)
 		}
@@ -818,6 +845,9 @@ func TestPollSandboxRequest(t *testing.T) {
 
 	t.Run("status error - returns error with message", func(t *testing.T) {
 		sandboxServer := newSimpleSandboxServer(t, map[string]http.HandlerFunc{
+			"/api/v1/login": func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+			},
 			"/api/v1/requests/req-3/status": func(w http.ResponseWriter, r *http.Request) {
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"status":  "error",
@@ -827,8 +857,8 @@ func TestPollSandboxRequest(t *testing.T) {
 		})
 		defer sandboxServer.Close()
 
-		client := clients.NewSandboxAPIClient(sandboxServer.URL)
-		err := pollSandboxRequest(client, "access-token", "req-3")
+		client := newTestSandboxClient(sandboxServer.URL)
+		err := pollSandboxRequest(context.Background(), client, "req-3")
 		if err == nil {
 			t.Fatal("expected error for status 'error', got nil")
 		}
@@ -839,6 +869,9 @@ func TestPollSandboxRequest(t *testing.T) {
 
 	t.Run("status failed - returns error", func(t *testing.T) {
 		sandboxServer := newSimpleSandboxServer(t, map[string]http.HandlerFunc{
+			"/api/v1/login": func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+			},
 			"/api/v1/requests/req-4/status": func(w http.ResponseWriter, r *http.Request) {
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"status":  "failed",
@@ -848,8 +881,8 @@ func TestPollSandboxRequest(t *testing.T) {
 		})
 		defer sandboxServer.Close()
 
-		client := clients.NewSandboxAPIClient(sandboxServer.URL)
-		err := pollSandboxRequest(client, "access-token", "req-4")
+		client := newTestSandboxClient(sandboxServer.URL)
+		err := pollSandboxRequest(context.Background(), client, "req-4")
 		if err == nil {
 			t.Fatal("expected error for status 'failed', got nil")
 		}

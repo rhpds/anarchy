@@ -9,6 +9,11 @@ import (
 
 // handleStatus routes a status action based on check_status_state.
 func handleStatus(rc *runner.RunContext) error {
+	slog.Info("handling status", "subject", rc.SubjectName(), "state", rc.CheckStatusState())
+	if rc.CheckStatusState() == "" && rc.Payload.Subject.Spec.Vars.JobVars == nil {
+		slog.Warn("handleStatus: no subject vars", "subject", rc.SubjectName())
+		return nil
+	}
 	checkStatusState := rc.CheckStatusState()
 
 	if checkStatusState == "pending" {

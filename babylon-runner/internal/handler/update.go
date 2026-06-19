@@ -8,6 +8,7 @@ import (
 
 // handleUpdate routes an update action based on the current state.
 func handleUpdate(rc *runner.RunContext) error {
+	slog.Info("handling update", "subject", rc.SubjectName(), "state", rc.CurrentState())
 	currentState := rc.CurrentState()
 
 	if currentState != "updating" {

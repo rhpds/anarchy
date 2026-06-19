@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"log/slog"
+
 	"github.com/google/uuid"
 
 	"github.com/rhpds/anarchy/babylon-runner/internal/runner"
@@ -12,6 +14,8 @@ import (
 // job_vars (matching Ansible's handle-event-create.yaml), then scheduling
 // the provision action.
 func handleEventCreate(rc *runner.RunContext) error {
+	slog.Info("handling create event", "subject", rc.SubjectName())
+
 	// Initialize subject if not already done.
 	if rc.CurrentState() == "" {
 		govJV := rc.GovernorJobVars()
@@ -68,7 +72,7 @@ func handleEventCreate(rc *runner.RunContext) error {
 		}
 	}
 
-	// Always schedule the provision action.
+	slog.Info("scheduling provision action", "subject", rc.SubjectName())
 	return rc.ScheduleAction(types.ScheduleActionRequest{
 		Action: "provision",
 	})

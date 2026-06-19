@@ -9,6 +9,8 @@ import (
 
 // handleStop routes a stop action based on the current state.
 func handleStop(rc *runner.RunContext) error {
+	slog.Info("handling stop", "subject", rc.SubjectName(), "state", rc.CurrentState())
+
 	if rc.CurrentState() != "stopping" {
 		return runStop(rc)
 	}
@@ -94,6 +96,7 @@ func runStop(rc *runner.RunContext) error {
 
 // handleStopComplete finalizes a successful stop.
 func handleStopComplete(rc *runner.RunContext) error {
+	slog.Info("stop complete", "subject", rc.SubjectName())
 	ts := types.NowUTC()
 
 	// Update tower jobs status.

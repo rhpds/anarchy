@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -10,6 +11,8 @@ import (
 
 // handleProvision routes a provision action based on the current state.
 func handleProvision(rc *runner.RunContext) error {
+	slog.Info("handling provision", "subject", rc.SubjectName(), "state", rc.CurrentState())
+
 	switch rc.CurrentState() {
 	case "provision-pending":
 		return runProvision(rc)
@@ -145,6 +148,7 @@ func runProvision(rc *runner.RunContext) error {
 
 // handleProvisionComplete finalizes a successful provision.
 func handleProvisionComplete(rc *runner.RunContext, provisionData, messageBody, messages interface{}) error {
+	slog.Info("provision complete", "subject", rc.SubjectName())
 	ts := types.NowUTC()
 
 	vars := map[string]interface{}{
@@ -331,14 +335,14 @@ func checkProvisionQueue(rc *runner.RunContext) error {
 		return handleProvisionError(rc)
 	}
 
-	accessToken, err := sandboxLogin(rc)
+	client, err := getSandboxClient(rc)
 	if err != nil {
-		slog.Error("checkProvisionQueue: login failed", "subject", rc.SubjectName(), "error", err)
+		slog.Error("checkProvisionQueue: client creation failed", "subject", rc.SubjectName(), "error", err)
 		return handleProvisionError(rc)
 	}
 
-	client := getSandboxClient(rc)
-	placement, statusCode, err := client.GetPlacement(accessToken, uuid)
+	ctx := context.TODO()
+	placement, statusCode, err := client.GetPlacement(ctx, uuid)
 	if err != nil {
 		slog.Error("checkProvisionQueue: get placement failed", "subject", rc.SubjectName(), "error", err)
 		return handleProvisionError(rc)

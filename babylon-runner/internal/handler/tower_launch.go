@@ -26,12 +26,15 @@ var defaultEntryPoints = map[string]string{
 // getDeployerEntryPoint returns the playbook path for the given action.
 // Lookup order (matching Ansible defaults/main.yaml):
 //  1. __meta__.deployer.actions.{action}.entry_point
-//  2. Per-action default from defaultEntryPoints
+//  2. __meta__.deployer.entry_point (generic)
+//  3. Per-action default from defaultEntryPoints
 func getDeployerEntryPoint(meta *types.Meta, action string) string {
 	if meta != nil && meta.Deployer != nil {
-		// 1. Per-action entry point.
 		if actionCfg, ok := meta.Deployer.Actions[action]; ok && actionCfg.EntryPoint != "" {
 			return actionCfg.EntryPoint
+		}
+		if meta.Deployer.EntryPoint != "" {
+			return meta.Deployer.EntryPoint
 		}
 	}
 	if def, ok := defaultEntryPoints[action]; ok {
@@ -44,6 +47,10 @@ func getDeployerEntryPoint(meta *types.Meta, action string) string {
 // __meta__.ansible_controllers configuration. Returns the client, the
 // controller hostname, and any error.
 func getTowerClientForAction(rc *runner.RunContext) (*clients.TowerClient, string, error) {
+	if rc.TowerBaseURL != "" {
+		return clients.NewTowerClient(rc.TowerBaseURL, "", ""), "test-tower", nil
+	}
+
 	meta := rc.Meta()
 	if meta == nil {
 		return nil, "", fmt.Errorf("no __meta__ in governor")
@@ -194,7 +201,7 @@ func buildJobExtraVars(rc *runner.RunContext, action string, dynamicJobVars map[
 	}
 	// Check raw deployer map for action extra_vars.
 	govAllVars := rc.GovernorAllVars()
-	rawMeta := types.GetNestedMap(govAllVars, "__meta__")
+	rawMeta := types.GetNestedMap(govAllVars, "job_vars", "__meta__")
 	actionExtraVars := types.GetNestedMap(rawMeta, "deployer", "actions", action, "extra_vars")
 	if actionExtraVars != nil {
 		types.MergeMap(extraVars, actionExtraVars)
@@ -252,6 +259,10 @@ func buildJobExtraVars(rc *runner.RunContext, action string, dynamicJobVars map[
 // This is used by checkDeployerJob and cancelTowerJob to connect to the
 // same controller where the job was originally launched.
 func getTowerClientForHost(rc *runner.RunContext, hostname string) (*clients.TowerClient, error) {
+	if rc.TowerBaseURL != "" {
+		return clients.NewTowerClient(rc.TowerBaseURL, "", ""), nil
+	}
+
 	meta := rc.Meta()
 	if meta == nil {
 		return nil, fmt.Errorf("no __meta__ in governor")
@@ -346,7 +357,7 @@ func launchTowerJob(rc *runner.RunContext, action, newState string, extraSpecVar
 	// ansible_control_plane type from raw meta (not typed).
 	var eeConfig *clients.EEConfig
 	govAllVars := rc.GovernorAllVars()
-	rawMeta := types.GetNestedMap(govAllVars, "__meta__")
+	rawMeta := types.GetNestedMap(govAllVars, "job_vars", "__meta__")
 	controlPlaneType := "tower"
 	acp := types.GetNestedMap(rawMeta, "ansible_control_plane")
 	if acp != nil {
@@ -405,11 +416,6 @@ func launchTowerJob(rc *runner.RunContext, action, newState string, extraSpecVar
 		}
 	}
 
-	// SCM update_on_launch override from deployer config.
-	if meta != nil && meta.Deployer != nil && meta.Deployer.SCMUpdateOnLaunch != nil {
-		scmUpdateOnLaunch = *meta.Deployer.SCMUpdateOnLaunch
-	}
-
 	config := clients.TowerJobConfig{
 		Organization:          org,
 		Inventory:             inventoryName,
@@ -438,9 +444,7 @@ func launchTowerJob(rc *runner.RunContext, action, newState string, extraSpecVar
 
 	slog.Info("tower job launched", "jobID", jobID, "action", action, "subject", rc.SubjectName())
 
-	// Serialize towerHost properly; in old code it was the hostname string,
-	// but the towerJobURL included "https://" prefix implicitly.
-	towerJobURL := fmt.Sprintf("https://%s/#/jobs/%d/", hostname, jobID)
+	towerJobURL := fmt.Sprintf("%s/#/jobs/%d/", hostname, jobID)
 
 	// Build the subject update patch.
 	patchBody := types.PatchBody{

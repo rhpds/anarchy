@@ -11,6 +11,8 @@ import (
 // to schedule a destroy action or finish immediately depending on whether
 // a provision tower job exists and a destroy action is available.
 func handleEventDelete(rc *runner.RunContext) error {
+	slog.Info("handling delete event", "subject", rc.SubjectName())
+
 	// Cancel all incomplete tower jobs before proceeding.
 	cancelAllIncompleteTowerJobs(rc)
 

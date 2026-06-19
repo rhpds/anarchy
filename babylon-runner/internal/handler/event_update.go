@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log/slog"
 	"reflect"
 
 	"github.com/rhpds/anarchy/babylon-runner/internal/runner"
@@ -11,6 +12,8 @@ import (
 // whether an action (update/start/stop) is needed based on state and
 // job_vars changes, and checks for status requests.
 func handleEventUpdate(rc *runner.RunContext) error {
+	slog.Info("handling update event", "subject", rc.SubjectName(), "currentState", rc.CurrentState(), "desiredState", rc.DesiredState())
+
 	currentState := rc.CurrentState()
 	desiredState := rc.DesiredState()
 
@@ -62,6 +65,7 @@ func handleEventUpdate(rc *runner.RunContext) error {
 					return err
 				}
 
+				slog.Info("scheduling action from update event", "action", action, "subject", rc.SubjectName())
 				err = rc.ScheduleAction(types.ScheduleActionRequest{
 					Action: action,
 					Cancel: []string{"start", "stop"},
