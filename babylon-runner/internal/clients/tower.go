@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/rhpds/anarchy/babylon-runner/internal/httputil"
 )
 
 const vaultVarChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -113,17 +115,14 @@ type TowerClient struct {
 }
 
 // NewTowerClient creates a TowerClient for the given hostname.
-// TLS certificate verification is disabled because tower certs are
-// self-signed in our environment.
-func NewTowerClient(hostname, username, password string) *TowerClient {
+// tlsConfig is optional — nil uses Go defaults (system CA, verify enabled).
+func NewTowerClient(hostname, username, password string, tlsConfig *tls.Config) *TowerClient {
 	return &TowerClient{
 		baseURL:  "https://" + hostname,
 		username: username,
 		password: password,
 		client: &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			},
+			Transport: httputil.NewTransport(tlsConfig),
 		},
 	}
 }

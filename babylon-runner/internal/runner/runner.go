@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,10 +31,11 @@ type Runner struct {
 	clientset      kubernetes.Interface
 	handlers       map[string]HandlerFunc
 	postRetryDelay time.Duration // base delay between POST retries; 0 in tests
+	towerTLSConfig *tls.Config
 }
 
 // New creates a Runner with an HTTP client and AnarchyClient.
-func New(cfg Config, clientset kubernetes.Interface) *Runner {
+func New(cfg Config, clientset kubernetes.Interface, towerTLSConfig *tls.Config) *Runner {
 	anarchyCfg := clients.AnarchyClientConfig{
 		BaseURL:    cfg.AnarchyURL,
 		AuthHeader: cfg.AuthHeader(),
@@ -46,6 +48,7 @@ func New(cfg Config, clientset kubernetes.Interface) *Runner {
 		clientset:      clientset,
 		handlers:       make(map[string]HandlerFunc),
 		postRetryDelay: 5 * time.Second,
+		towerTLSConfig: towerTLSConfig,
 	}
 }
 
@@ -97,6 +100,7 @@ func (r *Runner) pollOnce(ctx context.Context) error {
 		AnarchyClient:        r.anarchy,
 		Clientset:            r.clientset,
 		DefaultSandboxAPIURL: r.config.SandboxAPIURL,
+		TowerTLSConfig:       r.towerTLSConfig,
 		Result: types.RunResult{
 			Status: "successful",
 		},

@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/rhpds/anarchy/babylon-runner/internal/handler"
+	"github.com/rhpds/anarchy/babylon-runner/internal/httputil"
 	"github.com/rhpds/anarchy/babylon-runner/internal/runner"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -20,12 +21,17 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
+	towerTLSConfig, err := httputil.NewTLSConfig(cfg.TowerTLSVerify, cfg.TowerCACert)
+	if err != nil {
+		log.Fatalf("tower TLS config: %v", err)
+	}
+
 	clientset, err := buildClientset()
 	if err != nil {
 		slog.Warn("kubernetes client not available", "error", err)
 	}
 
-	r := runner.New(cfg, clientset)
+	r := runner.New(cfg, clientset, towerTLSConfig)
 	r.SetHandlers(handler.Register())
 	r.Run()
 }

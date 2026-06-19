@@ -193,7 +193,7 @@ func TestPollAndPostSuccess(t *testing.T) {
 		RequestTimeout:  5 * time.Second,
 	}
 
-	runner := New(cfg, nil)
+	runner := New(cfg, nil, nil)
 	runner.handlers["event:create"] = func(rc *RunContext) error {
 		return nil
 	}
@@ -253,7 +253,7 @@ func TestPollAndPostFailedHandler(t *testing.T) {
 		RequestTimeout:  5 * time.Second,
 	}
 
-	runner := New(cfg, nil)
+	runner := New(cfg, nil, nil)
 	runner.handlers["event:create"] = func(rc *RunContext) error {
 		return fmt.Errorf("handler failed")
 	}
@@ -313,7 +313,7 @@ func TestPollOnceIncludesDirectives(t *testing.T) {
 		RequestTimeout:  5 * time.Second,
 	}
 
-	runner := New(cfg, nil)
+	runner := New(cfg, nil, nil)
 	runner.handlers["action:provision"] = func(rc *RunContext) error {
 		rc.FinishAction("successful")
 		rc.DeleteSubject(true)
@@ -1170,7 +1170,7 @@ func TestSetHandlers(t *testing.T) {
 		PollingInterval: 5 * time.Second,
 		RequestTimeout:  5 * time.Second,
 	}
-	r := New(cfg, nil)
+	r := New(cfg, nil, nil)
 
 	handlers := map[string]HandlerFunc{
 		"event:create": func(rc *RunContext) error { return nil },

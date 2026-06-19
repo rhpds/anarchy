@@ -195,3 +195,47 @@ func TestConfigPollingInterval(t *testing.T) {
 		t.Errorf("PollingInterval = %v, want %v", cfg.PollingInterval, 15*time.Second)
 	}
 }
+
+func setRequiredEnvs(t *testing.T) {
+	t.Helper()
+	t.Setenv("ANARCHY_URL", "https://anarchy.example.com")
+	t.Setenv("RUNNER_NAME", "test-runner")
+	t.Setenv("RUNNER_TOKEN", "s3cret")
+	t.Setenv("HOSTNAME", "pod-abc-123")
+}
+
+func TestConfigTowerTLS(t *testing.T) {
+	setRequiredEnvs(t)
+
+	t.Run("defaults to verify=true", func(t *testing.T) {
+		cfg, err := ConfigFromEnv()
+		if err != nil {
+			t.Fatalf("ConfigFromEnv: %v", err)
+		}
+		if !cfg.TowerTLSVerify {
+			t.Error("TowerTLSVerify should default to true")
+		}
+	})
+
+	t.Run("TOWER_TLS_VERIFY=false", func(t *testing.T) {
+		t.Setenv("TOWER_TLS_VERIFY", "false")
+		cfg, err := ConfigFromEnv()
+		if err != nil {
+			t.Fatalf("ConfigFromEnv: %v", err)
+		}
+		if cfg.TowerTLSVerify {
+			t.Error("TowerTLSVerify should be false")
+		}
+	})
+
+	t.Run("TOWER_CA_CERT set", func(t *testing.T) {
+		t.Setenv("TOWER_CA_CERT", "/etc/pki/ca.crt")
+		cfg, err := ConfigFromEnv()
+		if err != nil {
+			t.Fatalf("ConfigFromEnv: %v", err)
+		}
+		if cfg.TowerCACert != "/etc/pki/ca.crt" {
+			t.Errorf("TowerCACert = %q, want /etc/pki/ca.crt", cfg.TowerCACert)
+		}
+	})
+}

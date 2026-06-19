@@ -47,7 +47,7 @@ func getDeployerEntryPoint(meta *types.Meta, action string) string {
 // controller hostname, and any error.
 func getTowerClientForAction(rc *runner.RunContext) (*clients.TowerClient, string, error) {
 	if rc.TowerBaseURL != "" {
-		return clients.NewTowerClient(rc.TowerBaseURL, "", ""), "test-tower", nil
+		return clients.NewTowerClient(rc.TowerBaseURL, "", "", rc.TowerTLSConfig), "test-tower", nil
 	}
 
 	meta := rc.Meta()
@@ -79,7 +79,7 @@ func getTowerClientForAction(rc *runner.RunContext) (*clients.TowerClient, strin
 		return nil, "", fmt.Errorf("credentials for %s: %w", hostname, err)
 	}
 
-	return clients.NewTowerClient(hostname, username, password), hostname, nil
+	return clients.NewTowerClient(hostname, username, password, rc.TowerTLSConfig), hostname, nil
 }
 
 // resolveControllerCreds returns (username, password) for a controller entry.
@@ -259,7 +259,7 @@ func buildJobExtraVars(rc *runner.RunContext, action string, dynamicJobVars map[
 // same controller where the job was originally launched.
 func getTowerClientForHost(rc *runner.RunContext, hostname string) (*clients.TowerClient, error) {
 	if rc.TowerBaseURL != "" {
-		return clients.NewTowerClient(rc.TowerBaseURL, "", ""), nil
+		return clients.NewTowerClient(rc.TowerBaseURL, "", "", rc.TowerTLSConfig), nil
 	}
 
 	meta := rc.Meta()
@@ -279,7 +279,7 @@ func getTowerClientForHost(rc *runner.RunContext, hostname string) (*clients.Tow
 			if err != nil {
 				return nil, fmt.Errorf("credentials for %s: %w", hostname, err)
 			}
-			return clients.NewTowerClient(hostname, username, password), nil
+			return clients.NewTowerClient(hostname, username, password, rc.TowerTLSConfig), nil
 		}
 	}
 

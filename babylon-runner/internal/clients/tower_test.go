@@ -236,7 +236,7 @@ func TestTowerGetJobStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tc := NewTowerClient("unused", "user", "pass")
+	tc := NewTowerClient("unused", "user", "pass", nil)
 	tc.baseURL = server.URL
 
 	status, err := tc.GetJobStatus("test-oauth-token", 42)
@@ -264,7 +264,7 @@ func TestTowerCancelJob(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tc := NewTowerClient("unused", "user", "pass")
+	tc := NewTowerClient("unused", "user", "pass", nil)
 	tc.baseURL = server.URL
 
 	if err := tc.CancelJob("cancel-token", 99); err != nil {
@@ -279,7 +279,7 @@ func TestTowerCancelJobAlreadyFinished(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tc := NewTowerClient("unused", "user", "pass")
+	tc := NewTowerClient("unused", "user", "pass", nil)
 	tc.baseURL = server.URL
 
 	if err := tc.CancelJob("token", 99); err != nil {
@@ -365,7 +365,7 @@ func TestTowerLaunchJob(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tc := NewTowerClient("unused", "admin", "secret")
+	tc := NewTowerClient("unused", "admin", "secret", nil)
 	tc.baseURL = server.URL
 
 	jobConfig := TowerJobConfig{
@@ -411,7 +411,7 @@ func TestTowerCreateOAuthToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tc := NewTowerClient("unused", "admin", "secret")
+	tc := NewTowerClient("unused", "admin", "secret", nil)
 	tc.baseURL = server.URL
 
 	token, tokenID, err := tc.CreateOAuthToken()
@@ -443,7 +443,7 @@ func TestTowerDeleteOAuthToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tc := NewTowerClient("unused", "admin", "secret")
+	tc := NewTowerClient("unused", "admin", "secret", nil)
 	tc.baseURL = server.URL
 
 	if err := tc.DeleteOAuthToken(42); err != nil {
@@ -478,7 +478,7 @@ func TestTowerEnsureResourceCreate(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tc := NewTowerClient("unused", "admin", "secret")
+	tc := NewTowerClient("unused", "admin", "secret", nil)
 	tc.baseURL = server.URL
 
 	id, err := tc.EnsureResource("my-token", "/api/v2/organizations/", map[string]interface{}{
@@ -518,7 +518,7 @@ func TestTowerEnsureResourceExisting(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tc := NewTowerClient("unused", "admin", "secret")
+	tc := NewTowerClient("unused", "admin", "secret", nil)
 	tc.baseURL = server.URL
 
 	id, err := tc.EnsureResource("my-token", "/api/v2/organizations/", map[string]interface{}{
@@ -615,7 +615,7 @@ func TestTowerLaunchJobWithEEAndCredentials(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tc := NewTowerClient("unused", "admin", "secret")
+	tc := NewTowerClient("unused", "admin", "secret", nil)
 	tc.baseURL = server.URL
 
 	jobConfig := TowerJobConfig{
@@ -707,7 +707,7 @@ func TestTowerLaunchJobSCMSettings(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tc := NewTowerClient("unused", "admin", "secret")
+	tc := NewTowerClient("unused", "admin", "secret", nil)
 	tc.baseURL = server.URL
 
 	jobConfig := TowerJobConfig{

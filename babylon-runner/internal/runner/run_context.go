@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"crypto/tls"
 
 	"github.com/rhpds/anarchy/babylon-runner/internal/clients"
 	"github.com/rhpds/anarchy/babylon-runner/internal/types"
@@ -20,6 +21,7 @@ type RunContext struct {
 	SandboxBaseURL       string // overridden in tests
 	DefaultSandboxAPIURL string // from Config; used as fallback when governor vars are absent
 	SandboxClientOpts    []clients.SandboxAPIOption // optional; used in tests to disable retries
+	TowerTLSConfig       *tls.Config
 }
 
 // --- Convenience accessors (typed payloads make these trivial) ---

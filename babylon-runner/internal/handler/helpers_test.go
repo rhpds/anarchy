@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -115,6 +116,7 @@ func newTestRunContext(t *testing.T, server *httptest.Server) *runner.RunContext
 		},
 		Result:        types.RunResult{Status: "successful"},
 		AnarchyClient: clients.NewAnarchyClient(cfg),
+		TowerTLSConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 }
 

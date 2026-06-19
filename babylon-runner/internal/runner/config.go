@@ -20,6 +20,8 @@ type Config struct {
 	PollingInterval time.Duration
 	RequestTimeout  time.Duration
 	SandboxAPIURL   string
+	TowerTLSVerify  bool
+	TowerCACert     string
 }
 
 // AuthHeader returns the Bearer token for Anarchy API requests.
@@ -53,6 +55,8 @@ func ConfigFromEnv() (Config, error) {
 	if cfg.SandboxAPIURL == "" {
 		cfg.SandboxAPIURL = DefaultSandboxAPIURL
 	}
+	cfg.TowerTLSVerify = envBool("TOWER_TLS_VERIFY", true)
+	cfg.TowerCACert = os.Getenv("TOWER_CA_CERT")
 	return cfg, nil
 }
 
@@ -64,6 +68,20 @@ func envInt(key string, defaultVal int) int {
 		return defaultVal
 	}
 	v, err := strconv.Atoi(s)
+	if err != nil {
+		return defaultVal
+	}
+	return v
+}
+
+// envBool reads a boolean from an environment variable, returning defaultVal
+// if the variable is unset or cannot be parsed.
+func envBool(key string, defaultVal bool) bool {
+	s := os.Getenv(key)
+	if s == "" {
+		return defaultVal
+	}
+	v, err := strconv.ParseBool(s)
 	if err != nil {
 		return defaultVal
 	}
