@@ -1385,20 +1385,20 @@ func TestHandleUpdateFailureWhileBeingDeleted(t *testing.T) {
 // --- actionRetryInterval tests ---
 
 func TestActionRetryIntervals(t *testing.T) {
-	expected := []string{"1m", "5m", "10m", "30m", "1h", "2h", "4h", "8h", "16h", "1d"}
+	intervals := []string{"1m", "5m", "10m", "30m", "1h", "2h", "4h", "8h", "16h", "1d"}
 
-	for i, want := range expected {
-		got := actionRetryInterval(i)
+	for i, want := range intervals {
+		got := actionRetryInterval(i, intervals)
 		if got != want {
 			t.Errorf("actionRetryInterval(%d) = %q, want %q", i, got, want)
 		}
 	}
 
 	// Beyond the list: should cap at last interval.
-	if got := actionRetryInterval(10); got != "1d" {
+	if got := actionRetryInterval(10, intervals); got != "1d" {
 		t.Errorf("actionRetryInterval(10) = %q, want 1d (cap)", got)
 	}
-	if got := actionRetryInterval(100); got != "1d" {
+	if got := actionRetryInterval(100, intervals); got != "1d" {
 		t.Errorf("actionRetryInterval(100) = %q, want 1d (cap)", got)
 	}
 }

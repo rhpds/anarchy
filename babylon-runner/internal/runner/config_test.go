@@ -239,3 +239,37 @@ func TestConfigTowerTLS(t *testing.T) {
 		}
 	})
 }
+
+func TestConfigActionRetryIntervals(t *testing.T) {
+	setRequiredEnvs(t)
+
+	t.Run("default intervals", func(t *testing.T) {
+		cfg, err := ConfigFromEnv()
+		if err != nil {
+			t.Fatalf("ConfigFromEnv: %v", err)
+		}
+		expected := []string{"1m", "5m", "10m", "30m", "1h", "2h", "4h", "8h", "16h", "1d"}
+		if len(cfg.ActionRetryIntervals) != len(expected) {
+			t.Fatalf("len = %d, want %d", len(cfg.ActionRetryIntervals), len(expected))
+		}
+		for i, v := range expected {
+			if cfg.ActionRetryIntervals[i] != v {
+				t.Errorf("[%d] = %q, want %q", i, cfg.ActionRetryIntervals[i], v)
+			}
+		}
+	})
+
+	t.Run("custom intervals", func(t *testing.T) {
+		t.Setenv("ACTION_RETRY_INTERVALS", "30s,2m,10m")
+		cfg, err := ConfigFromEnv()
+		if err != nil {
+			t.Fatalf("ConfigFromEnv: %v", err)
+		}
+		if len(cfg.ActionRetryIntervals) != 3 {
+			t.Fatalf("len = %d, want 3", len(cfg.ActionRetryIntervals))
+		}
+		if cfg.ActionRetryIntervals[0] != "30s" {
+			t.Errorf("[0] = %q, want 30s", cfg.ActionRetryIntervals[0])
+		}
+	})
+}

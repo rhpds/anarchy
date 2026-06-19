@@ -87,23 +87,18 @@ func checkDeployerJob(rc *runner.RunContext, action string) error {
 	}
 }
 
-// actionRetryIntervals is the list of retry intervals for failed actions.
-var actionRetryIntervals = []string{
-	"1m", "5m", "10m", "30m", "1h", "2h", "4h", "8h", "16h", "1d",
-}
-
 // actionRetryInterval returns the retry interval for the given retry count.
-func actionRetryInterval(retryCount int) string {
-	if retryCount < len(actionRetryIntervals) {
-		return actionRetryIntervals[retryCount]
+func actionRetryInterval(retryCount int, intervals []string) string {
+	if retryCount < len(intervals) {
+		return intervals[retryCount]
 	}
-	return actionRetryIntervals[len(actionRetryIntervals)-1]
+	return intervals[len(intervals)-1]
 }
 
 // continueWithRetry continues the action with an incremented retry count.
 func continueWithRetry(rc *runner.RunContext) {
 	count := rc.ActionRetryCount()
-	interval := actionRetryInterval(count)
+	interval := actionRetryInterval(count, rc.ActionRetryIntervals)
 	rc.ContinueActionWithVars(interval, map[string]interface{}{
 		"action_retry_count": count + 1,
 	})
@@ -440,7 +435,7 @@ func handleUpdateFailure(rc *runner.RunContext, status string) error {
 			rc.ContinueAction("1m")
 			return nil
 		}
-		interval := actionRetryInterval(rc.ActionRetryCount())
+		interval := actionRetryInterval(rc.ActionRetryCount(), rc.ActionRetryIntervals)
 		rc.ContinueAction(interval)
 		return nil
 	}

@@ -22,6 +22,7 @@ type RunContext struct {
 	DefaultSandboxAPIURL string // from Config; used as fallback when governor vars are absent
 	SandboxClientOpts    []clients.SandboxAPIOption // optional; used in tests to disable retries
 	TowerTLSConfig       *tls.Config
+	ActionRetryIntervals []string
 }
 
 // --- Convenience accessors (typed payloads make these trivial) ---

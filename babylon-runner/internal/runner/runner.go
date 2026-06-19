@@ -101,6 +101,7 @@ func (r *Runner) pollOnce(ctx context.Context) error {
 		Clientset:            r.clientset,
 		DefaultSandboxAPIURL: r.config.SandboxAPIURL,
 		TowerTLSConfig:       r.towerTLSConfig,
+		ActionRetryIntervals: r.config.ActionRetryIntervals,
 		Result: types.RunResult{
 			Status: "successful",
 		},

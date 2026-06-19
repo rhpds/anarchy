@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -11,17 +12,23 @@ import (
 // when running inside the cluster.
 const DefaultSandboxAPIURL = "http://sandbox-api.babylon-sandbox-api.svc.cluster.local:8080"
 
+// DefaultActionRetryIntervals is the default retry schedule for failed actions.
+var DefaultActionRetryIntervals = []string{
+	"1m", "5m", "10m", "30m", "1h", "2h", "4h", "8h", "16h", "1d",
+}
+
 // Config holds the runner configuration parsed from environment variables.
 type Config struct {
-	AnarchyURL      string
-	RunnerName      string
-	RunnerToken     string
-	PodName         string
-	PollingInterval time.Duration
-	RequestTimeout  time.Duration
-	SandboxAPIURL   string
-	TowerTLSVerify  bool
-	TowerCACert     string
+	AnarchyURL           string
+	RunnerName           string
+	RunnerToken          string
+	PodName              string
+	PollingInterval      time.Duration
+	RequestTimeout       time.Duration
+	SandboxAPIURL        string
+	TowerTLSVerify       bool
+	TowerCACert          string
+	ActionRetryIntervals []string
 }
 
 // AuthHeader returns the Bearer token for Anarchy API requests.
@@ -57,6 +64,7 @@ func ConfigFromEnv() (Config, error) {
 	}
 	cfg.TowerTLSVerify = envBool("TOWER_TLS_VERIFY", true)
 	cfg.TowerCACert = os.Getenv("TOWER_CA_CERT")
+	cfg.ActionRetryIntervals = envStringSlice("ACTION_RETRY_INTERVALS", DefaultActionRetryIntervals)
 	return cfg, nil
 }
 
@@ -86,4 +94,25 @@ func envBool(key string, defaultVal bool) bool {
 		return defaultVal
 	}
 	return v
+}
+
+// envStringSlice reads a comma-separated list from an environment variable,
+// returning defaultVal if the variable is unset or empty after trimming.
+func envStringSlice(key string, defaultVal []string) []string {
+	s := os.Getenv(key)
+	if s == "" {
+		return defaultVal
+	}
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	if len(result) == 0 {
+		return defaultVal
+	}
+	return result
 }
