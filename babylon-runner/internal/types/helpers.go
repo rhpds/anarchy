@@ -70,10 +70,17 @@ func NowUTC() string {
 	return time.Now().UTC().Format(time.RFC3339)
 }
 
-// MergeMap copies all key-value pairs from src into dst (shallow merge).
-// Existing keys in dst are overwritten.
-func MergeMap(dst, src map[string]interface{}) {
+// DeepMergeMap recursively merges src into dst. When both dst[k] and src[k]
+// are map[string]interface{}, their contents are merged recursively.
+// Otherwise src[k] overwrites dst[k].
+func DeepMergeMap(dst, src map[string]interface{}) {
 	for k, v := range src {
+		if srcMap, ok := v.(map[string]interface{}); ok {
+			if dstMap, ok := dst[k].(map[string]interface{}); ok {
+				DeepMergeMap(dstMap, srcMap)
+				continue
+			}
+		}
 		dst[k] = v
 	}
 }

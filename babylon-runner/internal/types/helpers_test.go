@@ -78,13 +78,72 @@ func TestSetNested(t *testing.T) {
 	}
 }
 
-func TestMergeMap(t *testing.T) {
-	dst := map[string]interface{}{"a": 1, "b": 2}
-	src := map[string]interface{}{"b": 3, "c": 4}
-	MergeMap(dst, src)
-	if dst["a"] != 1 || dst["b"] != 3 || dst["c"] != 4 {
-		t.Errorf("unexpected merge result: %v", dst)
-	}
+func TestDeepMergeMap(t *testing.T) {
+	t.Run("shallow keys", func(t *testing.T) {
+		dst := map[string]interface{}{"a": 1, "b": 2}
+		src := map[string]interface{}{"b": 3, "c": 4}
+		DeepMergeMap(dst, src)
+		if dst["a"] != 1 || dst["b"] != 3 || dst["c"] != 4 {
+			t.Errorf("unexpected result: %v", dst)
+		}
+	})
+
+	t.Run("nested map merge", func(t *testing.T) {
+		dst := map[string]interface{}{
+			"__meta__": map[string]interface{}{
+				"deployer": map[string]interface{}{"timeout": 300},
+				"sandbox":  "keep-this",
+			},
+		}
+		src := map[string]interface{}{
+			"__meta__": map[string]interface{}{
+				"deployer": map[string]interface{}{"retries": 3},
+				"new_key":  "added",
+			},
+		}
+		DeepMergeMap(dst, src)
+		meta := dst["__meta__"].(map[string]interface{})
+		deployer := meta["deployer"].(map[string]interface{})
+		if deployer["timeout"] != 300 {
+			t.Error("deep merge lost existing nested key 'timeout'")
+		}
+		if deployer["retries"] != 3 {
+			t.Error("deep merge did not add 'retries'")
+		}
+		if meta["sandbox"] != "keep-this" {
+			t.Error("deep merge lost sibling key 'sandbox'")
+		}
+		if meta["new_key"] != "added" {
+			t.Error("deep merge did not add 'new_key'")
+		}
+	})
+
+	t.Run("src overwrites non-map with map", func(t *testing.T) {
+		dst := map[string]interface{}{"key": "string-value"}
+		src := map[string]interface{}{"key": map[string]interface{}{"nested": true}}
+		DeepMergeMap(dst, src)
+		if _, ok := dst["key"].(map[string]interface{}); !ok {
+			t.Error("expected map to replace string")
+		}
+	})
+
+	t.Run("src overwrites map with non-map", func(t *testing.T) {
+		dst := map[string]interface{}{"key": map[string]interface{}{"nested": true}}
+		src := map[string]interface{}{"key": "string-value"}
+		DeepMergeMap(dst, src)
+		if dst["key"] != "string-value" {
+			t.Errorf("expected string, got %v", dst["key"])
+		}
+	})
+
+	t.Run("nil src value", func(t *testing.T) {
+		dst := map[string]interface{}{"a": 1}
+		src := map[string]interface{}{"a": nil}
+		DeepMergeMap(dst, src)
+		if dst["a"] != nil {
+			t.Errorf("expected nil, got %v", dst["a"])
+		}
+	})
 }
 
 func TestExtractStringSlice(t *testing.T) {

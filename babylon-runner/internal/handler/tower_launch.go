@@ -158,15 +158,15 @@ func buildJobExtraVars(rc *runner.RunContext, action string, dynamicJobVars map[
 
 	// Subject first (lowest priority).
 	if sjv := rc.JobVars(); sjv != nil {
-		types.MergeMap(extraVars, sjv)
+		types.DeepMergeMap(extraVars, sjv)
 	}
 	// Governor overrides subject.
 	if gjv := rc.GovernorJobVars(); gjv != nil {
-		types.MergeMap(extraVars, gjv)
+		types.DeepMergeMap(extraVars, gjv)
 	}
 	// Dynamic vars (sandbox creds) override both.
 	if dynamicJobVars != nil {
-		types.MergeMap(extraVars, dynamicJobVars)
+		types.DeepMergeMap(extraVars, dynamicJobVars)
 	}
 
 	// Debug: log what we got from each source.
@@ -204,7 +204,7 @@ func buildJobExtraVars(rc *runner.RunContext, action string, dynamicJobVars map[
 	rawMeta := types.GetNestedMap(govAllVars, "job_vars", "__meta__")
 	actionExtraVars := types.GetNestedMap(rawMeta, "deployer", "actions", action, "extra_vars")
 	if actionExtraVars != nil {
-		types.MergeMap(extraVars, actionExtraVars)
+		types.DeepMergeMap(extraVars, actionExtraVars)
 	} else {
 		extraVars["ACTION"] = action
 	}

@@ -121,7 +121,7 @@ func sandboxGet(rc *runner.RunContext, action string) (*SandboxResult, error) {
 			if jv == nil {
 				jv = make(map[string]interface{})
 			}
-			types.MergeMap(jv, subjectVars)
+			types.DeepMergeMap(jv, subjectVars)
 			patch.Spec = &types.PatchSpec{
 				Vars: map[string]interface{}{
 					"job_vars": jv,
@@ -596,7 +596,7 @@ func extractSandboxVars(placement map[string]interface{}, creds bool) map[string
 		}
 
 		if varName == "main" {
-			types.MergeMap(vars, toMerge)
+			types.DeepMergeMap(vars, toMerge)
 		} else {
 			vars[varName] = toMerge
 		}

@@ -249,7 +249,7 @@ func handleProvisionFailed(rc *runner.RunContext) error {
 	// Merge existing job_vars and set forensics flag.
 	jv := make(map[string]interface{})
 	if jobVars != nil {
-		types.MergeMap(jv, jobVars)
+		types.DeepMergeMap(jv, jobVars)
 	}
 	jv["agnosticd_collect_forensics"] = true
 	vars["job_vars"] = jv
@@ -404,7 +404,7 @@ func checkProvisionQueue(rc *runner.RunContext) error {
 			if jv == nil {
 				jv = make(map[string]interface{})
 			}
-			types.MergeMap(jv, dynamicVars)
+			types.DeepMergeMap(jv, dynamicVars)
 			specVars["job_vars"] = jv
 		}
 		patch.Spec = &types.PatchSpec{Vars: specVars}
