@@ -20,8 +20,25 @@ func handleStatus(rc *runner.RunContext) error {
 		return runStatus(rc)
 	}
 
-	if checkStatusState == "running" && !rc.DeployerDisabled("status") {
-		return checkDeployerJob(rc, "status")
+	if checkStatusState == "running" {
+		if !rc.DeployerDisabled("status") {
+			return checkDeployerJob(rc, "status")
+		}
+		// Deployer disabled but state stuck at "running" — finish it.
+		if err := rc.SubjectUpdate(types.SubjectPatch{
+			Patch: types.PatchBody{
+				Spec: &types.PatchSpec{
+					Vars: map[string]interface{}{
+						"check_status_state": "successful",
+					},
+				},
+				SkipUpdateProcessing: true,
+			},
+		}); err != nil {
+			return err
+		}
+		rc.FinishAction("successful")
+		return nil
 	}
 
 	return nil
@@ -71,5 +88,19 @@ func runStatus(rc *runner.RunContext) error {
 		return nil
 	}
 
+	// Deployer disabled: mark status check as successful immediately.
+	if err := rc.SubjectUpdate(types.SubjectPatch{
+		Patch: types.PatchBody{
+			Spec: &types.PatchSpec{
+				Vars: map[string]interface{}{
+					"check_status_state": "successful",
+				},
+			},
+			SkipUpdateProcessing: true,
+		},
+	}); err != nil {
+		return err
+	}
+	rc.FinishAction("successful")
 	return nil
 }

@@ -93,6 +93,119 @@ func TestHandleStatusRunning(t *testing.T) {
 	}
 }
 
+func TestHandleStatus_DeployerDisabled_Pending_FinishesAction(t *testing.T) {
+	server, calls := newTestAnarchyServer(t)
+	defer server.Close()
+
+	rc := newTestRunContext(t, server)
+	rc.Payload.Action = &types.Action{
+		Metadata: types.ObjectMeta{Name: "test-status-action"},
+		Spec:     types.ActionSpec{Action: "status"},
+	}
+	rc.Payload.Subject.Spec.Vars.JobVars = map[string]interface{}{
+		"uuid": "test-uuid",
+	}
+	rc.Payload.Subject.Spec.Vars.CheckStatusState = "pending"
+
+	// Set deployer disabled for status action.
+	rc.Payload.Governor.Spec.Vars.Meta = &types.Meta{
+		Deployer: &types.DeployerMeta{
+			Actions: map[string]types.DeployerActionConfig{
+				"status": {Disabled: true},
+			},
+		},
+	}
+
+	if err := handleStatus(rc); err != nil {
+		t.Fatalf("handleStatus returned error: %v", err)
+	}
+
+	// Should have set startTimestamp and check_status_state=successful.
+	if len(*calls) < 2 {
+		t.Fatalf("expected at least 2 calls, got %d", len(*calls))
+	}
+
+	// First call: PATCH to set startTimestamp.
+	c0 := (*calls)[0]
+	if c0.Method != http.MethodPatch {
+		t.Errorf("call[0] method = %s, want PATCH", c0.Method)
+	}
+
+	// Second call: PATCH to set check_status_state=successful.
+	c1 := (*calls)[1]
+	if c1.Method != http.MethodPatch {
+		t.Errorf("call[1] method = %s, want PATCH", c1.Method)
+	}
+
+	patch := c1.Body["patch"].(map[string]interface{})
+	spec := patch["spec"].(map[string]interface{})
+	vars := spec["vars"].(map[string]interface{})
+	if vars["check_status_state"] != "successful" {
+		t.Errorf("check_status_state = %v, want successful", vars["check_status_state"])
+	}
+
+	// FinishAction should be set.
+	if rc.Result.FinishAction == nil {
+		t.Fatal("FinishAction should be set when deployer is disabled")
+	}
+	if rc.Result.FinishAction.State != "successful" {
+		t.Errorf("FinishAction.State = %q, want successful", rc.Result.FinishAction.State)
+	}
+}
+
+func TestHandleStatus_DeployerDisabled_Running_FinishesAction(t *testing.T) {
+	server, calls := newTestAnarchyServer(t)
+	defer server.Close()
+
+	rc := newTestRunContext(t, server)
+	rc.Payload.Action = &types.Action{
+		Metadata: types.ObjectMeta{Name: "test-status-action"},
+		Spec:     types.ActionSpec{Action: "status"},
+	}
+	rc.Payload.Subject.Spec.Vars.JobVars = map[string]interface{}{
+		"uuid": "test-uuid",
+	}
+	rc.Payload.Subject.Spec.Vars.CheckStatusState = "running"
+
+	// Set deployer disabled for status action.
+	rc.Payload.Governor.Spec.Vars.Meta = &types.Meta{
+		Deployer: &types.DeployerMeta{
+			Actions: map[string]types.DeployerActionConfig{
+				"status": {Disabled: true},
+			},
+		},
+	}
+
+	if err := handleStatus(rc); err != nil {
+		t.Fatalf("handleStatus returned error: %v", err)
+	}
+
+	// Should have set check_status_state=successful.
+	if len(*calls) < 1 {
+		t.Fatalf("expected at least 1 call, got %d", len(*calls))
+	}
+
+	c0 := (*calls)[0]
+	if c0.Method != http.MethodPatch {
+		t.Errorf("call[0] method = %s, want PATCH", c0.Method)
+	}
+
+	patch := c0.Body["patch"].(map[string]interface{})
+	spec := patch["spec"].(map[string]interface{})
+	vars := spec["vars"].(map[string]interface{})
+	if vars["check_status_state"] != "successful" {
+		t.Errorf("check_status_state = %v, want successful", vars["check_status_state"])
+	}
+
+	// FinishAction should be set.
+	if rc.Result.FinishAction == nil {
+		t.Fatal("FinishAction should be set when deployer is disabled")
+	}
+	if rc.Result.FinishAction.State != "successful" {
+		t.Errorf("FinishAction.State = %q, want successful", rc.Result.FinishAction.State)
+	}
+}
+
 // --- handleUpdate tests ---
 
 func TestHandleUpdateNotUpdating(t *testing.T) {
