@@ -75,6 +75,7 @@ oc wait --for=condition=Ready pod/"$DEV_POD" -n "$NAMESPACE" --timeout=60s
 
 # --- Run ---
 
+export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
 export ANARCHY_URL="${ANARCHY_URL:-http://localhost:5000}"
 export ANARCHY_NAMESPACE="$NAMESPACE"
 export RUNNER_NAME="$RUNNER"
@@ -89,7 +90,7 @@ echo "RUNNER_TOKEN=${RUNNER_TOKEN:0:8}..."
 echo "HOSTNAME=$HOSTNAME"
 echo ""
 echo "Building..."
-go build -o "${TMPDIR:-/tmp}/babylon-runner" . || exit 1
+make build || exit 1
 echo "Starting babylon-runner... (Ctrl+C to stop)"
 # Can't exec here — need the trap to fire for cleanup.
-"${TMPDIR:-/tmp}/babylon-runner"
+bin/babylon-runner

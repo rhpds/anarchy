@@ -9,6 +9,22 @@ The anarchy operator doesn't care what language the runner is written in — it 
 The runner image is controlled by the `AnarchyRunner` CR's pod template.
 If no image is specified in the pod template, the operator falls back to `RUNNER_IMAGE` env var, then to the operator's own image.
 
+## Project Structure
+
+```text
+babylon-runner/
+  cmd/babylon-runner/    # Entry point (main.go)
+  internal/
+    types/               # Shared data types (RunPayload, RunResult, etc.)
+    runner/              # Core runner loop, config, dispatch, RunContext
+    handler/             # Handler implementations (provision, destroy, start, stop, etc.)
+    clients/             # AnarchyClient, DeployerClient HTTP clients
+    httputil/            # Shared HTTP helpers and token cache
+    template/            # Template rendering utilities
+  Makefile               # build, test, lint, clean, docker-build targets
+  Dockerfile             # Multi-stage build (builder + ubi9-micro)
+```
+
 ## Enable the Go Runner
 
 ### Option A: Separate runner pool (recommended for testing)
@@ -135,7 +151,12 @@ podman push quay.io/rhpds/babylon-runner:dev
 
 ```bash
 cd anarchy/babylon-runner
-go test ./... -v
+make test
+
+# Or run per-package:
+go test ./internal/types/ -v
+go test ./internal/runner/ -v
+go test ./internal/handler/ -v
 ```
 
 ### 2. Test locally against a real cluster
@@ -154,7 +175,7 @@ oc get pods -n anarchy -l anarchy.gpte.redhat.com/runner -o yaml \
   | grep -A1 RUNNER_TOKEN
 ```
 
-Run the Go binary locally:
+Build and run locally:
 
 ```bash
 export ANARCHY_URL=http://localhost:5000
@@ -162,7 +183,8 @@ export RUNNER_NAME=default
 export RUNNER_TOKEN=<token-from-above>
 export HOSTNAME=local-dev-pod
 
-go run .
+make build
+bin/babylon-runner
 ```
 
 The runner will start polling for runs. Trigger an action on a subject to see it work.
