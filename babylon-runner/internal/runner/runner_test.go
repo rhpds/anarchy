@@ -1188,6 +1188,71 @@ func TestSetHandlers(t *testing.T) {
 	}
 }
 
+func TestPollOnceRecoversPanic(t *testing.T) {
+	var postBody struct {
+		Result types.RunResult `json:"result"`
+	}
+	var postCalled atomic.Int32
+	runName := "test-run-panic"
+
+	payload := types.RunPayload{
+		Handler: types.Handler{
+			Type: "subjectEvent",
+			Name: "create",
+		},
+		Subject: types.Subject{
+			Metadata: types.ObjectMeta{Name: "test-subject"},
+		},
+		Run: types.Run{
+			Metadata: types.ObjectMeta{Name: runName},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/run":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(payload)
+		case r.Method == http.MethodPost && r.URL.Path == fmt.Sprintf("/run/%s", runName):
+			postCalled.Add(1)
+			json.NewDecoder(r.Body).Decode(&postBody)
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cfg := Config{
+		AnarchyURL:      server.URL,
+		RunnerName:      "runner",
+		PodName:         "pod",
+		RunnerToken:     "token",
+		PollingInterval: 5 * time.Second,
+		RequestTimeout:  5 * time.Second,
+	}
+
+	runner := New(cfg, nil, nil)
+	runner.handlers["event:create"] = func(rc *RunContext) error {
+		panic("nil pointer dereference simulation")
+	}
+
+	err := runner.pollOnce(context.Background())
+	if err != nil {
+		t.Fatalf("pollOnce returned error: %v", err)
+	}
+
+	if postCalled.Load() != 1 {
+		t.Errorf("POST call count = %d, want 1", postCalled.Load())
+	}
+	if postBody.Result.Status != "failed" {
+		t.Errorf("result status = %q, want %q", postBody.Result.Status, "failed")
+	}
+	if !strings.Contains(postBody.Result.StatusMessage, "panic") {
+		t.Errorf("status message = %q, should contain 'panic'", postBody.Result.StatusMessage)
+	}
+}
+
 // --- helper ---
 
 func newTestRunner(serverURL string) *Runner {

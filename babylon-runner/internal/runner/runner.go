@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -117,11 +118,26 @@ func (r *Runner) pollOnce(ctx context.Context) error {
 		"subject", subject,
 		"handler", payload.Handler.Type+":"+handlerName)
 
-	if err := Dispatch(rc, r.handlers); err != nil {
-		slog.Error("handler failed", "run", rc.RunName(), "subject", subject, "error", err)
-		rc.Result.Status = "failed"
-		rc.Result.StatusMessage = err.Error()
-	}
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				stack := string(debug.Stack())
+				slog.Error("handler panicked",
+					"run", rc.RunName(),
+					"subject", subject,
+					"panic", rec,
+					"stack", stack)
+				rc.Result.Status = "failed"
+				rc.Result.StatusMessage = fmt.Sprintf("panic: %v", rec)
+			}
+		}()
+
+		if err := Dispatch(rc, r.handlers); err != nil {
+			slog.Error("handler failed", "run", rc.RunName(), "subject", subject, "error", err)
+			rc.Result.Status = "failed"
+			rc.Result.StatusMessage = err.Error()
+		}
+	}()
 
 	if err := r.postResult(ctx, rc.RunName(), rc.Result); err != nil {
 		slog.Warn("post result rejected (will be re-dispatched)", "run", rc.RunName(), "subject", subject, "error", err)
