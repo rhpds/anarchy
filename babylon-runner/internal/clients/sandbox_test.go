@@ -1,13 +1,14 @@
 package clients
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
-func TestSandboxAPILogin(t *testing.T) {
+func TestSandboxAPILoginViaTokenCache(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method = %s, want POST", r.Method)
@@ -26,10 +27,14 @@ func TestSandboxAPILogin(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewSandboxAPIClient(server.URL)
-	token, err := client.Login("my-login-token")
+	client := NewSandboxAPIClient(server.URL, "my-login-token", WithNoRetries())
+	defer client.Close(context.Background())
+
+	// Token is obtained implicitly on first method call.
+	// Verify by calling a simple method that exercises the token cache.
+	token, err := client.accessToken(context.Background())
 	if err != nil {
-		t.Fatalf("Login returned error: %v", err)
+		t.Fatalf("accessToken returned error: %v", err)
 	}
 	if token != "access-abc123" {
 		t.Errorf("token = %q, want %q", token, "access-abc123")
@@ -38,26 +43,32 @@ func TestSandboxAPILogin(t *testing.T) {
 
 func TestSandboxAPIGetPlacement(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			t.Errorf("method = %s, want GET", r.Method)
+		switch r.URL.Path {
+		case "/api/v1/login":
+			json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+		case "/api/v1/placements/uuid-123":
+			if r.Method != http.MethodGet {
+				t.Errorf("method = %s, want GET", r.Method)
+			}
+			want := "Bearer access-token"
+			if got := r.Header.Get("Authorization"); got != want {
+				t.Errorf("Authorization = %q, want %q", got, want)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"uuid":   "uuid-123",
+				"status": "ready",
+			})
+		default:
+			http.NotFound(w, r)
 		}
-		if r.URL.Path != "/api/v1/placements/uuid-123" {
-			t.Errorf("path = %s, want /api/v1/placements/uuid-123", r.URL.Path)
-		}
-		want := "Bearer access-token"
-		if got := r.Header.Get("Authorization"); got != want {
-			t.Errorf("Authorization = %q, want %q", got, want)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"uuid":   "uuid-123",
-			"status": "ready",
-		})
 	}))
 	defer server.Close()
 
-	client := NewSandboxAPIClient(server.URL)
-	result, statusCode, err := client.GetPlacement("access-token", "uuid-123")
+	client := NewSandboxAPIClient(server.URL, "login-token", WithNoRetries())
+	defer client.Close(context.Background())
+
+	result, statusCode, err := client.GetPlacement(context.Background(), "uuid-123")
 	if err != nil {
 		t.Fatalf("GetPlacement returned error: %v", err)
 	}
@@ -74,12 +85,19 @@ func TestSandboxAPIGetPlacement(t *testing.T) {
 
 func TestSandboxAPIGetPlacement404(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
+		switch r.URL.Path {
+		case "/api/v1/login":
+			json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
 	}))
 	defer server.Close()
 
-	client := NewSandboxAPIClient(server.URL)
-	result, statusCode, err := client.GetPlacement("access-token", "missing-uuid")
+	client := NewSandboxAPIClient(server.URL, "login-token", WithNoRetries())
+	defer client.Close(context.Background())
+
+	result, statusCode, err := client.GetPlacement(context.Background(), "missing-uuid")
 	if err != nil {
 		t.Fatalf("GetPlacement 404 should not return error, got: %v", err)
 	}
@@ -93,34 +111,40 @@ func TestSandboxAPIGetPlacement404(t *testing.T) {
 
 func TestSandboxAPIBookPlacement(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf("method = %s, want POST", r.Method)
+		switch r.URL.Path {
+		case "/api/v1/login":
+			json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+		case "/api/v1/placements":
+			if r.Method != http.MethodPost {
+				t.Errorf("method = %s, want POST", r.Method)
+			}
+			// Verify request body.
+			var body map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			if body["service_uuid"] != "svc-001" {
+				t.Errorf("service_uuid = %v, want %q", body["service_uuid"], "svc-001")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"uuid":       "placement-456",
+				"request_id": "req-789",
+			})
+		default:
+			http.NotFound(w, r)
 		}
-		if r.URL.Path != "/api/v1/placements" {
-			t.Errorf("path = %s, want /api/v1/placements", r.URL.Path)
-		}
-		// Verify request body.
-		var body map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
-		if body["service_uuid"] != "svc-001" {
-			t.Errorf("service_uuid = %v, want %q", body["service_uuid"], "svc-001")
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"uuid":       "placement-456",
-			"request_id": "req-789",
-		})
 	}))
 	defer server.Close()
 
-	client := NewSandboxAPIClient(server.URL)
+	client := NewSandboxAPIClient(server.URL, "login-token", WithNoRetries())
+	defer client.Close(context.Background())
+
 	reqBody := map[string]interface{}{
 		"service_uuid": "svc-001",
 	}
-	result, statusCode, err := client.BookPlacement("access-token", reqBody)
+	result, statusCode, err := client.BookPlacement(context.Background(), reqBody)
 	if err != nil {
 		t.Fatalf("BookPlacement returned error: %v", err)
 	}
@@ -134,26 +158,32 @@ func TestSandboxAPIBookPlacement(t *testing.T) {
 
 func TestSandboxAPIStartPlacement(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut {
-			t.Errorf("method = %s, want PUT", r.Method)
+		switch r.URL.Path {
+		case "/api/v1/login":
+			json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+		case "/api/v1/placements/uuid-123/start":
+			if r.Method != http.MethodPut {
+				t.Errorf("method = %s, want PUT", r.Method)
+			}
+			want := "Bearer access-token"
+			if got := r.Header.Get("Authorization"); got != want {
+				t.Errorf("Authorization = %q, want %q", got, want)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"uuid":   "uuid-123",
+				"status": "starting",
+			})
+		default:
+			http.NotFound(w, r)
 		}
-		if r.URL.Path != "/api/v1/placements/uuid-123/start" {
-			t.Errorf("path = %s, want /api/v1/placements/uuid-123/start", r.URL.Path)
-		}
-		want := "Bearer access-token"
-		if got := r.Header.Get("Authorization"); got != want {
-			t.Errorf("Authorization = %q, want %q", got, want)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"uuid":   "uuid-123",
-			"status": "starting",
-		})
 	}))
 	defer server.Close()
 
-	client := NewSandboxAPIClient(server.URL)
-	result, err := client.StartPlacement("access-token", "uuid-123")
+	client := NewSandboxAPIClient(server.URL, "login-token", WithNoRetries())
+	defer client.Close(context.Background())
+
+	result, err := client.StartPlacement(context.Background(), "uuid-123")
 	if err != nil {
 		t.Fatalf("StartPlacement returned error: %v", err)
 	}
@@ -164,26 +194,32 @@ func TestSandboxAPIStartPlacement(t *testing.T) {
 
 func TestSandboxAPIStopPlacement(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut {
-			t.Errorf("method = %s, want PUT", r.Method)
+		switch r.URL.Path {
+		case "/api/v1/login":
+			json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+		case "/api/v1/placements/uuid-123/stop":
+			if r.Method != http.MethodPut {
+				t.Errorf("method = %s, want PUT", r.Method)
+			}
+			want := "Bearer access-token"
+			if got := r.Header.Get("Authorization"); got != want {
+				t.Errorf("Authorization = %q, want %q", got, want)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"uuid":   "uuid-123",
+				"status": "stopping",
+			})
+		default:
+			http.NotFound(w, r)
 		}
-		if r.URL.Path != "/api/v1/placements/uuid-123/stop" {
-			t.Errorf("path = %s, want /api/v1/placements/uuid-123/stop", r.URL.Path)
-		}
-		want := "Bearer access-token"
-		if got := r.Header.Get("Authorization"); got != want {
-			t.Errorf("Authorization = %q, want %q", got, want)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"uuid":   "uuid-123",
-			"status": "stopping",
-		})
 	}))
 	defer server.Close()
 
-	client := NewSandboxAPIClient(server.URL)
-	result, err := client.StopPlacement("access-token", "uuid-123")
+	client := NewSandboxAPIClient(server.URL, "login-token", WithNoRetries())
+	defer client.Close(context.Background())
+
+	result, err := client.StopPlacement(context.Background(), "uuid-123")
 	if err != nil {
 		t.Fatalf("StopPlacement returned error: %v", err)
 	}
@@ -194,22 +230,28 @@ func TestSandboxAPIStopPlacement(t *testing.T) {
 
 func TestSandboxAPIReleasePlacement(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodDelete {
-			t.Errorf("method = %s, want DELETE", r.Method)
+		switch r.URL.Path {
+		case "/api/v1/login":
+			json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+		case "/api/v1/placements/uuid-123":
+			if r.Method != http.MethodDelete {
+				t.Errorf("method = %s, want DELETE", r.Method)
+			}
+			want := "Bearer access-token"
+			if got := r.Header.Get("Authorization"); got != want {
+				t.Errorf("Authorization = %q, want %q", got, want)
+			}
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, r)
 		}
-		if r.URL.Path != "/api/v1/placements/uuid-123" {
-			t.Errorf("path = %s, want /api/v1/placements/uuid-123", r.URL.Path)
-		}
-		want := "Bearer access-token"
-		if got := r.Header.Get("Authorization"); got != want {
-			t.Errorf("Authorization = %q, want %q", got, want)
-		}
-		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
-	client := NewSandboxAPIClient(server.URL)
-	err := client.ReleasePlacement("access-token", "uuid-123")
+	client := NewSandboxAPIClient(server.URL, "login-token", WithNoRetries())
+	defer client.Close(context.Background())
+
+	err := client.ReleasePlacement(context.Background(), "uuid-123")
 	if err != nil {
 		t.Fatalf("ReleasePlacement returned error: %v", err)
 	}
@@ -217,26 +259,32 @@ func TestSandboxAPIReleasePlacement(t *testing.T) {
 
 func TestSandboxAPIGetRequestStatus(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			t.Errorf("method = %s, want GET", r.Method)
+		switch r.URL.Path {
+		case "/api/v1/login":
+			json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+		case "/api/v1/requests/req-123/status":
+			if r.Method != http.MethodGet {
+				t.Errorf("method = %s, want GET", r.Method)
+			}
+			want := "Bearer access-token"
+			if got := r.Header.Get("Authorization"); got != want {
+				t.Errorf("Authorization = %q, want %q", got, want)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"request_id": "req-123",
+				"status":     "completed",
+			})
+		default:
+			http.NotFound(w, r)
 		}
-		if r.URL.Path != "/api/v1/requests/req-123/status" {
-			t.Errorf("path = %s, want /api/v1/requests/req-123/status", r.URL.Path)
-		}
-		want := "Bearer access-token"
-		if got := r.Header.Get("Authorization"); got != want {
-			t.Errorf("Authorization = %q, want %q", got, want)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"request_id": "req-123",
-			"status":     "completed",
-		})
 	}))
 	defer server.Close()
 
-	client := NewSandboxAPIClient(server.URL)
-	result, err := client.GetRequestStatus("access-token", "req-123")
+	client := NewSandboxAPIClient(server.URL, "login-token", WithNoRetries())
+	defer client.Close(context.Background())
+
+	result, err := client.GetRequestStatus(context.Background(), "req-123")
 	if err != nil {
 		t.Fatalf("GetRequestStatus returned error: %v", err)
 	}
@@ -250,12 +298,19 @@ func TestSandboxAPIGetRequestStatus(t *testing.T) {
 
 func TestSandboxAPIGetRequestStatusError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
+		switch r.URL.Path {
+		case "/api/v1/login":
+			json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
 	}))
 	defer server.Close()
 
-	client := NewSandboxAPIClient(server.URL)
-	result, err := client.GetRequestStatus("access-token", "req-123")
+	client := NewSandboxAPIClient(server.URL, "login-token", WithNoRetries())
+	defer client.Close(context.Background())
+
+	result, err := client.GetRequestStatus(context.Background(), "req-123")
 	if err == nil {
 		t.Fatal("expected error for 500, got nil")
 	}
@@ -274,24 +329,31 @@ func TestSandboxAPILoginMissingToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewSandboxAPIClient(server.URL)
-	token, err := client.Login("my-login-token")
+	client := NewSandboxAPIClient(server.URL, "my-login-token", WithNoRetries())
+	defer client.Close(context.Background())
+
+	// The login error should surface when we try to get a token.
+	_, err := client.accessToken(context.Background())
 	if err == nil {
 		t.Fatal("expected error for missing access_token, got nil")
-	}
-	if token != "" {
-		t.Errorf("token should be empty on error, got %q", token)
 	}
 }
 
 func TestSandboxAPIGetPlacementError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
+		switch r.URL.Path {
+		case "/api/v1/login":
+			json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
 	}))
 	defer server.Close()
 
-	client := NewSandboxAPIClient(server.URL)
-	result, statusCode, err := client.GetPlacement("access-token", "uuid-123")
+	client := NewSandboxAPIClient(server.URL, "login-token", WithNoRetries())
+	defer client.Close(context.Background())
+
+	result, statusCode, err := client.GetPlacement(context.Background(), "uuid-123")
 	if err == nil {
 		t.Fatal("expected error for 500, got nil")
 	}
@@ -305,12 +367,19 @@ func TestSandboxAPIGetPlacementError(t *testing.T) {
 
 func TestSandboxAPIReleasePlacementError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
+		switch r.URL.Path {
+		case "/api/v1/login":
+			json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
 	}))
 	defer server.Close()
 
-	client := NewSandboxAPIClient(server.URL)
-	err := client.ReleasePlacement("access-token", "uuid-123")
+	client := NewSandboxAPIClient(server.URL, "login-token", WithNoRetries())
+	defer client.Close(context.Background())
+
+	err := client.ReleasePlacement(context.Background(), "uuid-123")
 	if err == nil {
 		t.Fatal("expected error for 500, got nil")
 	}
@@ -318,19 +387,51 @@ func TestSandboxAPIReleasePlacementError(t *testing.T) {
 
 func TestSandboxAPIBookPlacementUnexpectedStatus(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
+		switch r.URL.Path {
+		case "/api/v1/login":
+			json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
 	}))
 	defer server.Close()
 
-	client := NewSandboxAPIClient(server.URL)
-	_, _, err := client.BookPlacement("access-token", map[string]interface{}{"key": "val"})
+	client := NewSandboxAPIClient(server.URL, "login-token", WithNoRetries())
+	defer client.Close(context.Background())
+
+	_, _, err := client.BookPlacement(context.Background(), map[string]interface{}{"key": "val"})
 	if err == nil {
 		t.Fatal("expected error for unexpected status 500, got nil")
 	}
 }
 
-func TestDefaultSandboxAPIURL(t *testing.T) {
-	if DefaultSandboxAPIURL != "http://sandbox-api.babylon-sandbox-api.svc.cluster.local:8080" {
-		t.Errorf("DefaultSandboxAPIURL = %q, want cluster-local URL", DefaultSandboxAPIURL)
+func TestSandboxAPITokenCaching(t *testing.T) {
+	var loginCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/login":
+			loginCount++
+			json.NewEncoder(w).Encode(map[string]string{"access_token": "access-token"})
+		case "/api/v1/placements/uuid-1":
+			json.NewEncoder(w).Encode(map[string]interface{}{"uuid": "uuid-1"})
+		case "/api/v1/placements/uuid-2":
+			json.NewEncoder(w).Encode(map[string]interface{}{"uuid": "uuid-2"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewSandboxAPIClient(server.URL, "login-token", WithNoRetries())
+	defer client.Close(context.Background())
+
+	ctx := context.Background()
+
+	// Two consecutive calls should reuse the same token.
+	_, _, _ = client.GetPlacement(ctx, "uuid-1")
+	_, _, _ = client.GetPlacement(ctx, "uuid-2")
+
+	if loginCount != 1 {
+		t.Errorf("login called %d times, want 1 (token should be cached)", loginCount)
 	}
 }
