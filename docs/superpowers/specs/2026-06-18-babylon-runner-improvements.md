@@ -4,6 +4,20 @@
 
 This spec addresses structural, performance, correctness, and maintainability issues identified in the `babylon-runner` Go binary (PoC by Guillaume). The state machine, handler logic, and toggle mechanism (`spec.runner: babylon-go`) remain unchanged. The focus is on code organization, production readiness, and long-term sustainability.
 
+## Implementation Phases
+
+| Phase       | Theme       | Changes                                | Status      |
+| ----------- | ----------- | -------------------------------------- | ----------- |
+| **Phase 1** | Foundation  | #1, #2, #3, #14, #15                  | Not Started |
+| **Phase 2** | Correctness | #4, #5, #7, #10, #13, GAP-1, GAP-3   | Not Started |
+| **Phase 3** | Production  | #6, #8, #9, #12, #16                  | Not Started |
+
+**Phase 1 — Foundation:** Restructure from flat `package main` to standard Go layout, add typed payloads, and establish shared HTTP infrastructure. All subsequent changes target the new layout.
+
+**Phase 2 — Correctness:** Fix bugs and add safety mechanisms blocking for production deployment.
+
+**Phase 3 — Production:** Observability, performance optimization, and feature parity for production readiness.
+
 ## Motivation
 
 The PoC is functionally correct — it implements the babylon governor state machine and passes its test suite. However, deploying it alongside 203 runner pods processing ~3,250 runs/day requires:
@@ -14,11 +28,10 @@ The PoC is functionally correct — it implements the babylon governor state mac
 - Observability (Prometheus metrics)
 - Graceful shutdown via `context.Context` propagation
 - Data-driven configuration instead of hardcoded variable mappings
-- Robust Jinja2 template processing
 
 ## Changes
 
-### 1. Project Structure
+### 1. Project Structure (Phase 1)
 
 Restructure from flat `package main` (21 files) to standard Go layout with internal packages.
 
@@ -86,7 +99,7 @@ babylon-runner/
 │   │   ├── instrument.go        # Prometheus-instrumented HTTP round-tripper
 │   │   └── token_cache.go       # Thread-safe token cache with TTL and refresh callback
 │   ├── template/
-│   │   └── engine.go            # Jinja2/pongo2 template engine
+│   │   └── jinja2.go            # Existing Jinja2 resolver (migrated as-is)
 │   └── types/
 │       ├── payload.go           # RunPayload, Handler, typed Governor/Subject/Action structs
 │       ├── result.go            # RunResult, directives (Finish, Continue, Delete)
@@ -107,12 +120,12 @@ babylon-runner/
 - **`handler/`** — correct API calls, state transitions, and retry scheduling per handler (mock external clients)
 - **`clients/`** — one `*_test.go` per client file: anarchy (request construction, response parsing, retry behavior), tower (controller selection, job launch, status polling, OAuth lifecycle), sandbox (login, booking, placement lifecycle, token caching), scheduler (evaluate request/response, fallback on failure, timeout handling)
 - **`httputil/`** — retry with context cancellation, poll timeout, JSON marshal/unmarshal, TLS config, token cache (TTL expiry, refresh, thread-safety, cleanup)
-- **`template/`** — all supported Jinja2 constructs, silent failure detection, caching
+- **`template/`** — existing Jinja2 constructs (variable substitution, dotted paths, default filter)
 - **`types/`** — deep merge, nested accessors, JSON serialization round-trip
 
 The PoC already has 14 test files in the flat structure. These must be migrated to the corresponding packages and expanded to cover new functionality introduced by each change.
 
-### 2. Typed Payloads
+### 2. Typed Payloads (Phase 1)
 
 Replace `map[string]interface{}` in `RunPayload` with typed structs for fields with known schema. Retain `map[string]interface{}` only for genuinely dynamic fields (`job_vars`, `extra_vars`).
 
@@ -201,7 +214,7 @@ type SubjectStatus struct {
 
 **Rationale:** A typo in `getNestedString(m, "spec", "vasr", "current_state")` compiles and silently returns `""`. A typo in `subject.Spec.Vars.CurrentState` is a compile error. The `RunContext` convenience methods (`CurrentState()`, `DesiredState()`, etc.) become trivial field accessors instead of map traversals.
 
-### 3. Kubernetes Client (client-go)
+### 3. Kubernetes Client — client-go (Phase 1)
 
 Replace raw HTTP calls in `k8s.go` with `client-go`.
 
@@ -248,7 +261,7 @@ For tests, inject `fake.NewSimpleClientset()` with pre-populated secrets — no 
 
 **New dependency:** `k8s.io/client-go`
 
-### 4. Context Propagation
+### 4. Context Propagation (Phase 2)
 
 Thread `context.Context` through all HTTP operations and retry loops for graceful shutdown. All clients use `httputil.RetryWithContext` and `httputil.DoJSON` (see change #14) instead of inline `time.Sleep` loops.
 
@@ -265,7 +278,7 @@ Thread `context.Context` through all HTTP operations and retry loops for gracefu
 
 **Rationale:** SIGTERM during a 200-second sandbox login retry (40 × 5s) currently blocks shutdown. With context, the runner shuts down within the current retry delay interval.
 
-### 5. TLS Configuration
+### 5. TLS Configuration (Phase 2)
 
 Make TLS verification configurable instead of hardcoded `InsecureSkipVerify: true`.
 
@@ -278,7 +291,7 @@ Make TLS verification configurable instead of hardcoded `InsecureSkipVerify: tru
 
 **K8s TLS:** Handled automatically by `client-go` (uses cluster CA from serviceaccount).
 
-### 6. HTTP Client Reuse and Token Caching
+### 6. HTTP Client Reuse and Token Caching (Phase 3)
 
 **Problem 1:** `getTowerClientForAction` creates a new `TowerClient` (with new `http.Transport`) on every call. Each `checkDeployerJob` (every 5 minutes) creates a new client, makes HTTP calls, and discards the transport.
 
@@ -396,7 +409,7 @@ Each `TowerClient` in the pool holds its own `httputil.TokenCache` instance. The
 
 **What stays in each client:** Auth-specific logic (how to obtain/delete tokens) lives in the refresh/cleanup callbacks. The `TokenCache` only manages the lifecycle (thread-safety, TTL, refresh-on-expiry).
 
-### 7. Configuration for Hardcoded Constants
+### 7. Configuration for Hardcoded Constants (Phase 2)
 
 Move hardcoded operational constants to the Config struct with env vars and sensible defaults. No `__meta__` reads — these are runner-level settings, not governor-level.
 
@@ -412,9 +425,9 @@ These are added to the existing Config struct in `internal/runner/config.go` alo
 **What stays hardcoded (known limitation):**
 
 - `deployer_entry_points` — already configurable via `__meta__.deployer.actions.{action}.entry_point`. No change needed.
-- Initial variables in `handleEventCreate` (`cloud_provider`, `platform`, `uuid`, `guid`) remain hardcoded. In the Ansible role, these come from `defaults/main.yaml` via Jinja2 resolution (e.g., `{{ __meta__.cloud_provider | default('none') }}`). The Go runner cannot resolve these templates without a full Jinja2 engine. Making them data-driven is deferred to change #11. Until then, adding a new initial variable requires a code change.
+- Initial variables in `handleEventCreate` (`cloud_provider`, `platform`, `uuid`, `guid`) remain hardcoded. In the Ansible role, these come from `defaults/main.yaml` via Jinja2 resolution (e.g., `{{ __meta__.cloud_provider | default('none') }}`). The Go runner cannot resolve these templates without a full Jinja2 engine. Making them data-driven is deferred to a future spec. Until then, adding a new initial variable requires a code change.
 
-### 8. Prometheus Metrics
+### 8. Prometheus Metrics (Phase 3)
 
 Add metrics matching the existing Ansible runner's observability level.
 
@@ -462,14 +475,14 @@ var (
 
 **New dependency:** `github.com/prometheus/client_golang`
 
-### 9. Health Endpoint
+### 9. Health Endpoint (Phase 3)
 
 Expose `/healthz` and `/readyz` on the metrics HTTP server for Kubernetes probes.
 
 - `/healthz` — returns 200 if the HTTP server can respond. No custom deadlock detection needed — if the process hangs, the probe times out and Kubernetes restarts the pod.
 - `/readyz` — returns 200 if the runner has successfully connected to the Anarchy API at least once
 
-### 10. Deep Merge
+### 10. Deep Merge (Phase 2)
 
 Replace shallow `mergeMap` with recursive deep merge.
 
@@ -501,39 +514,7 @@ func deepMergeMap(dst, src map[string]interface{}) {
 
 **Rationale:** Ansible `combine(recursive=True)` does recursive merge. `buildJobExtraVars` merges `governor_job_vars` + `subject_job_vars` which both contain `__meta__` sub-trees. Shallow merge overwrites entire nested maps instead of merging their keys.
 
-### 11. Jinja2 Template Engine
-
-**Current state:** The 148-line `jinja2.go` supports only three Jinja2 constructs:
-
-- `{{ var }}` — simple variable substitution
-- `{{ dotted.path }}` — nested map traversal
-- `{{ var | default('val') }}` — single filter
-
-Audit of 1,508 `__meta__` files in agnosticv confirms this subset covers 100% of templates the runner currently resolves (all within `__meta__.sandboxes` blocks).
-
-**Risk:** The current implementation fails silently. When it encounters an unsupported construct — `| int`, `| bool`, `{% if %}`, `is defined`, inline conditionals, arithmetic — it returns the raw template string as-is. No error, no log, no indication that resolution failed. The Sandbox API receives a literal `{{ ... }}` string instead of a resolved value.
-
-This means:
-
-1. A governor author adds `{{ num_users | int }}` to a sandbox resource spec
-2. The runner sends the literal string `"{{ num_users | int }}"` to the Sandbox API
-3. The Sandbox API either rejects it (best case) or treats it as a string value (worst case — silent data corruption)
-4. No error surfaces in runner logs because `resolveJ2` succeeded — it just returned the wrong value
-
-**Proposed:** Replace the hand-rolled regex parser with a proper Jinja2-compatible template library for Go. The replacement should support at minimum:
-
-- All current constructs (variable substitution, dotted paths, `default` filter)
-- Common filters (`| int`, `| bool`, `| join`, `| length`)
-- Conditional tests (`is defined`, `is not defined`)
-- Inline conditionals (`{{ a if cond else b }}`)
-- `{% if %}` / `{% endif %}` blocks
-- Template caching for performance
-
-The library choice should be evaluated during implementation. Key criteria: Jinja2 compatibility, active maintenance, and minimal transitive dependencies.
-
-**Scope:** The template engine replaces only the Jinja2 resolution in `handler_sandbox.go:212`. A Jinja2→library syntax preprocessor may be needed depending on the library chosen, as most Go template libraries have minor syntax differences from Jinja2.
-
-### 12. Polling Loop Optimization
+### 12. Polling Loop Optimization (Phase 3)
 
 **Current:** `Runner.Run()` uses a `time.Ticker(5s)` but `client.Do()` blocks for the server's 30s long-poll timeout anyway, making the ticker redundant.
 
@@ -561,7 +542,7 @@ func (r *Runner) Run(ctx context.Context) error {
 
 **Rationale:** Matches the Python runner behavior. The server-side 30s hold IS the idle sleep. On timeout (no run available), the runner immediately re-polls. On connection error, it waits `PollingInterval` before retrying.
 
-### 13. Missing `guid` in Event Create
+### 13. Missing `guid` in Event Create (Phase 2)
 
 **Current:** `handleEventCreate` sets `cloud_provider`, `platform`, `uuid` but not `guid`. The Ansible role sets both `uuid` and `guid`.
 
@@ -573,7 +554,7 @@ jobVarsPatch["guid"] = guidFromSubjectName(rc)
 
 Where `guid` is typically derived from the subject name or generated.
 
-### 14. Shared HTTP Infrastructure (`internal/httputil`)
+### 14. Shared HTTP Infrastructure — `internal/httputil` (Phase 1)
 
 **Problem:** Three API clients (Anarchy, Tower, Sandbox) each implement their own HTTP transport creation, JSON request/response marshaling, retry loops with `time.Sleep`, and will each need metrics instrumentation. This duplicates ~100 lines of infrastructure code across components.
 
@@ -667,7 +648,7 @@ All clients live in the `clients` package and import helpers from `httputil`.
 
 **Rationale:** Eliminates ~100 lines of duplicated transport/retry/marshal code. Fixes context propagation and metrics instrumentation in one place instead of three. Each client remains a focused ~60-80 line file with only domain logic. Adding a 4th API client in the future gets retry, metrics, and context for free.
 
-### 15. Makefile
+### 15. Makefile (Phase 1)
 
 **Current state:** The project has `dev-run.sh` (96-line shell script for local development) but no Makefile. `dev-run.sh` handles port-forwarding, dev pod creation, building (`go build -o ${TMPDIR}/babylon-runner .`), and running — mixing infrastructure setup with the build step. The Dockerfile duplicates the build command (`CGO_ENABLED=0 GOOS=linux go build -o babylon-runner .`). There is no standard entry point for common developer tasks.
 
@@ -713,7 +694,7 @@ docker-build:
 
 **Rationale:** Standard Go projects use Makefiles as the single entry point for build, test, and lint. This eliminates duplicated build commands between `dev-run.sh` and `Dockerfile`, and gives contributors a discoverable interface (`make help` or reading the Makefile) for all project operations.
 
-### 16. Controller Scheduler Integration
+### 16. Controller Scheduler Integration (Phase 3)
 
 **Context:** The `babylon_anarchy_governor` Ansible role (branch `controller-scheduler`) adds an optional external service that replaces the local `selectController` logic (random/balance/first-available) with intelligent, label-aware controller selection via `POST /api/v1/evaluate/controllers`. The babylon-runner must support this same mechanism to maintain feature parity.
 
@@ -816,13 +797,12 @@ func getTowerClientForAction(rc *RunContext) (*TowerClient, string, error) {
 | ------------------------------------- | --------------------- | --------------------------------------------- |
 | `k8s.io/client-go`                    | Kubernetes API access | Replaces raw HTTP with standard Go K8s client |
 | `github.com/prometheus/client_golang` | Metrics               | Production observability                      |
-| Jinja2-compatible Go template library | Jinja2 templates      | Robust template processing (library TBD)      |
 
 ## Migration Strategy
 
-Changes are independent and can be implemented incrementally:
+Changes are independent and can be implemented incrementally. See **Implementation Phases** at the top of this document for the phase table and status.
 
-**Phase 1 — Structure (do first to avoid rework):**
+**Phase 1 — Foundation** (do first to avoid rework):
 
 - #1 Project structure — restructure flat `package main` into `internal/` packages. All subsequent changes target the new layout.
 - #14 Shared HTTP infrastructure (`internal/httputil`) — must land with #1, as clients depend on it
@@ -830,7 +810,7 @@ Changes are independent and can be implemented incrementally:
 - #2 Typed payloads
 - #3 Kubernetes client (client-go) — initialized in main, passed via struct (no `internal/k8s/` package)
 
-**Phase 2 — Correctness (blocking for production):**
+**Phase 2 — Correctness** (blocking for production):
 
 - #10 Deep merge
 - #13 Missing guid
@@ -840,7 +820,7 @@ Changes are independent and can be implemented incrementally:
 - GAP-1 Panic recovery in dispatch loop
 - GAP-3 Status handler finish when deployer disabled
 
-**Phase 3 — Production readiness:**
+**Phase 3 — Production** (observability, performance, feature parity):
 
 - #8 Prometheus metrics
 - #9 Health endpoint
@@ -848,17 +828,17 @@ Changes are independent and can be implemented incrementally:
 - #12 Polling loop optimization
 - #16 Controller scheduler integration — depends on #3 (client-go for secret reading), #5 (TLS), #14 (httputil)
 
-**Phase 4 — Sustainability:**
-
-- #11 Jinja2 template engine — also enables future data-driven initial vars (cloud_provider, platform, uuid, guid) by resolving governor defaults like Ansible does
-
 Each phase can be validated independently with the existing toggle mechanism (`spec.runner: babylon-go`) on a live cluster.
+
+## Out of Scope
+
+- **Jinja2 template engine** — deferred to a future spec. The current `jinja2.go` (148 lines, 3 constructs) covers 100% of templates the runner resolves today. A robust Jinja2-compatible engine (library selection, preprocessor, filters, caching) is a separate effort with its own scope and evaluation criteria. Until then, adding new initial variables in `handleEventCreate` requires a code change.
 
 ## Gap Analysis
 
 Thorough review of all 21 Go source files against the spec changes revealed the following issues not covered by existing changes.
 
-### GAP-1: No Panic Recovery (add to spec — Phase 1)
+### GAP-1: No Panic Recovery (Phase 2)
 
 **File:** `runner.go:307`
 
@@ -883,7 +863,7 @@ Each sandbox operation (`sandboxGet`, `sandboxBook`, `sandboxStart`, `sandboxSto
 
 **Fix:** Resolved by change #6 — the Sandbox client uses `httputil.TokenCache` with the login flow as its refresh callback. The token is cached and reused automatically across operations within the same client instance.
 
-### GAP-3: Status Handler Orphans Action When Deployer Disabled (add to spec — Phase 1)
+### GAP-3: Status Handler Orphans Action When Deployer Disabled (Phase 2)
 
 **File:** `handler_status.go:50-63`
 
