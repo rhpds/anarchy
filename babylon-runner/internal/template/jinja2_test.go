@@ -167,9 +167,9 @@ func TestJ2VarContext(t *testing.T) {
 		"job_vars": map[string]interface{}{
 			"env_type": "ocp4-demo",
 			"region":   "us-east-1",
-		},
-		"__meta__": map[string]interface{}{
-			"aws_sandboxed": true,
+			"__meta__": map[string]interface{}{
+				"aws_sandboxed": true,
+			},
 		},
 	}
 
@@ -199,10 +199,11 @@ func TestJ2VarContext(t *testing.T) {
 		t.Errorf("provision_data.console = %v, want url", pd["console"])
 	}
 
-	// Governor-only keys preserved.
-	meta, ok := vars["__meta__"].(map[string]interface{})
+	// Governor-only keys preserved (__meta__ inside job_vars).
+	// jv already holds vars["job_vars"] from above.
+	meta, ok := jv["__meta__"].(map[string]interface{})
 	if !ok {
-		t.Fatal("__meta__ missing from context")
+		t.Fatal("__meta__ missing from job_vars in context")
 	}
 	if meta["aws_sandboxed"] != true {
 		t.Errorf("__meta__.aws_sandboxed = %v, want true", meta["aws_sandboxed"])

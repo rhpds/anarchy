@@ -145,7 +145,9 @@ func TestDispatchUnregisteredHandler(t *testing.T) {
 
 func TestPollAndPostSuccess(t *testing.T) {
 	var postCalled atomic.Int32
-	var postBody types.RunResult
+	var postBody struct {
+		Result types.RunResult `json:"result"`
+	}
 
 	runName := "test-run-abc"
 	payload := types.RunPayload{
@@ -199,13 +201,15 @@ func TestPollAndPostSuccess(t *testing.T) {
 	if postCalled.Load() != 1 {
 		t.Errorf("POST /run/%s call count = %d, want 1", runName, postCalled.Load())
 	}
-	if postBody.Status != "successful" {
-		t.Errorf("result status = %q, want %q", postBody.Status, "successful")
+	if postBody.Result.Status != "successful" {
+		t.Errorf("result status = %q, want %q", postBody.Result.Status, "successful")
 	}
 }
 
 func TestPollAndPostFailedHandler(t *testing.T) {
-	var postBody types.RunResult
+	var postBody struct {
+		Result types.RunResult `json:"result"`
+	}
 	runName := "test-run-fail"
 
 	payload := types.RunPayload{
@@ -254,13 +258,15 @@ func TestPollAndPostFailedHandler(t *testing.T) {
 		t.Fatalf("pollOnce returned error: %v", err)
 	}
 
-	if postBody.Status != "failed" {
-		t.Errorf("result status = %q, want %q", postBody.Status, "failed")
+	if postBody.Result.Status != "failed" {
+		t.Errorf("result status = %q, want %q", postBody.Result.Status, "failed")
 	}
 }
 
 func TestPollOnceIncludesDirectives(t *testing.T) {
-	var postBody types.RunResult
+	var postBody struct {
+		Result types.RunResult `json:"result"`
+	}
 	runName := "test-run-directives"
 
 	payload := types.RunPayload{
@@ -314,17 +320,17 @@ func TestPollOnceIncludesDirectives(t *testing.T) {
 		t.Fatalf("pollOnce returned error: %v", err)
 	}
 
-	if postBody.FinishAction == nil {
+	if postBody.Result.FinishAction == nil {
 		t.Fatal("FinishAction directive should not be nil")
 	}
-	if postBody.FinishAction.State != "successful" {
-		t.Errorf("FinishAction.State = %q, want %q", postBody.FinishAction.State, "successful")
+	if postBody.Result.FinishAction.State != "successful" {
+		t.Errorf("FinishAction.State = %q, want %q", postBody.Result.FinishAction.State, "successful")
 	}
-	if postBody.DeleteSubject == nil {
+	if postBody.Result.DeleteSubject == nil {
 		t.Fatal("DeleteSubject directive should not be nil")
 	}
-	if postBody.DeleteSubject.RemoveFinalizers != true {
-		t.Errorf("DeleteSubject.RemoveFinalizers = %v, want true", postBody.DeleteSubject.RemoveFinalizers)
+	if postBody.Result.DeleteSubject.RemoveFinalizers != true {
+		t.Errorf("DeleteSubject.RemoveFinalizers = %v, want true", postBody.Result.DeleteSubject.RemoveFinalizers)
 	}
 }
 
@@ -344,6 +350,44 @@ func TestGetRunNoContent(t *testing.T) {
 	}
 	if payload != nil {
 		t.Errorf("getRun() = %v, want nil", payload)
+	}
+}
+
+func TestGetRunNullBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("null"))
+	}))
+	defer server.Close()
+
+	r := newTestRunner(server.URL)
+
+	payload, err := r.getRun(context.Background())
+	if err != nil {
+		t.Fatalf("getRun returned error: %v", err)
+	}
+	if payload != nil {
+		t.Errorf("getRun() = %v, want nil for null body", payload)
+	}
+}
+
+func TestGetRunEmptyObject(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{}"))
+	}))
+	defer server.Close()
+
+	r := newTestRunner(server.URL)
+
+	payload, err := r.getRun(context.Background())
+	if err != nil {
+		t.Fatalf("getRun returned error: %v", err)
+	}
+	if payload != nil {
+		t.Errorf("getRun() = %v, want nil for empty object", payload)
 	}
 }
 

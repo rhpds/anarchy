@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -91,26 +92,35 @@ func (r *Runner) pollOnce(ctx context.Context) error {
 	}
 
 	rc := &RunContext{
-		Payload:       *payload,
-		AnarchyClient: r.anarchy,
-		Clientset:     r.clientset,
+		Payload:              *payload,
+		AnarchyClient:        r.anarchy,
+		Clientset:            r.clientset,
+		DefaultSandboxAPIURL: r.config.SandboxAPIURL,
 		Result: types.RunResult{
 			Status: "successful",
 		},
 	}
 
+	subject := rc.SubjectName()
+	handlerName := payload.Handler.Name
+	if handlerName == "" && payload.Action != nil {
+		handlerName = payload.Action.Spec.Action
+	}
 	slog.Info("dispatching run",
 		"run", rc.RunName(),
-		"handler", payload.Handler.Type+":"+payload.Handler.Name)
+		"subject", subject,
+		"handler", payload.Handler.Type+":"+handlerName)
 
 	if err := Dispatch(rc, r.handlers); err != nil {
-		slog.Error("handler failed", "run", rc.RunName(), "error", err)
+		slog.Error("handler failed", "run", rc.RunName(), "subject", subject, "error", err)
 		rc.Result.Status = "failed"
 		rc.Result.StatusMessage = err.Error()
 	}
 
 	if err := r.postResult(ctx, rc.RunName(), rc.Result); err != nil {
-		slog.Error("post result failed", "run", rc.RunName(), "error", err)
+		slog.Warn("post result rejected (will be re-dispatched)", "run", rc.RunName(), "subject", subject, "error", err)
+	} else {
+		slog.Info("run complete", "run", rc.RunName(), "subject", subject, "status", rc.Result.Status)
 	}
 	return nil
 }
@@ -136,6 +146,9 @@ func (r *Runner) getRun(ctx context.Context) (*types.RunPayload, error) {
 		var payload types.RunPayload
 		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 			return nil, fmt.Errorf("decode run payload: %w", err)
+		}
+		if payload.Run.Metadata.Name == "" {
+			return nil, nil
 		}
 		return &payload, nil
 	case http.StatusNoContent, http.StatusRequestTimeout:
@@ -168,7 +181,7 @@ func (r *Runner) postResult(ctx context.Context, runName string, result types.Ru
 			case <-time.After(delay):
 			}
 		}
-		body, _ := json.Marshal(result)
+		body, _ := json.Marshal(map[string]interface{}{"result": result})
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url,
 			strings.NewReader(string(body)))
 		if err != nil {
@@ -181,11 +194,15 @@ func (r *Runner) postResult(ctx context.Context, runName string, result types.Ru
 		if err != nil {
 			continue
 		}
+		respBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			return nil
 		}
-		slog.Warn("POST result failed", "status", resp.StatusCode)
+		slog.Warn("POST result failed", "status", resp.StatusCode, "body", string(respBody), "run", runName)
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			return fmt.Errorf("POST result rejected: %d %s", resp.StatusCode, string(respBody))
+		}
 	}
 	return fmt.Errorf("POST result failed after %d retries", maxRetries)
 }

@@ -11,12 +11,14 @@ import (
 // RunContext holds the per-run state and provides convenience methods
 // for accessing payload data and calling the Anarchy API.
 type RunContext struct {
-	Payload           types.RunPayload
-	Result            types.RunResult
-	AnarchyClient     *clients.AnarchyClient
-	Clientset         kubernetes.Interface
-	SandboxBaseURL    string                   // overridden in tests
-	SandboxClientOpts []clients.SandboxAPIOption // optional; used in tests to disable retries
+	Payload              types.RunPayload
+	Result               types.RunResult
+	AnarchyClient        *clients.AnarchyClient
+	Clientset            kubernetes.Interface
+	TowerBaseURL         string // overridden in tests to inject mock Tower server
+	SandboxBaseURL       string // overridden in tests
+	DefaultSandboxAPIURL string // from Config; used as fallback when governor vars are absent
+	SandboxClientOpts    []clients.SandboxAPIOption // optional; used in tests to disable retries
 }
 
 // --- Convenience accessors (typed payloads make these trivial) ---
@@ -76,7 +78,7 @@ func (rc *RunContext) GovernorAllVars() map[string]interface{} {
 	return rc.Payload.Governor.Spec.Vars.AllVars()
 }
 
-// Meta returns __meta__ from governor.spec.vars. Returns an empty Meta
+// Meta returns __meta__ from governor.spec.vars.job_vars. Returns an empty Meta
 // if none is set, so callers never need to nil-check.
 func (rc *RunContext) Meta() *types.Meta {
 	if rc.Payload.Governor.Spec.Vars.Meta != nil {
@@ -85,9 +87,14 @@ func (rc *RunContext) Meta() *types.Meta {
 	return &types.Meta{}
 }
 
-// SandboxAPIInUse returns true if meta.aws_sandboxed is set.
+// SandboxAPIInUse returns true if meta.aws_sandboxed is true or
+// meta.sandboxes has at least one element.
 func (rc *RunContext) SandboxAPIInUse() bool {
-	return rc.Meta().AWSSandboxed
+	meta := rc.Meta()
+	if meta.AWSSandboxed {
+		return true
+	}
+	return len(meta.Sandboxes) > 0
 }
 
 // DeployerDisabled returns true if __meta__.deployer.actions.{action}.disabled is true.
