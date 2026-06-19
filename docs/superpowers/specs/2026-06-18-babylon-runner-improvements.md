@@ -6,11 +6,11 @@ This spec addresses structural, performance, correctness, and maintainability is
 
 ## Implementation Phases
 
-| Phase       | Theme       | Changes                                | Status      |
-| ----------- | ----------- | -------------------------------------- | ----------- |
-| **Phase 1** | Foundation  | #1, #2, #3, #14, #15                  | Not Started |
-| **Phase 2** | Correctness | #4, #5, #7, #10, #13, GAP-1, GAP-3   | Not Started |
-| **Phase 3** | Production  | #6, #8, #9, #12, #16                  | Not Started |
+| Phase       | Theme       | Changes                            | Status      |
+| ----------- | ----------- | ---------------------------------- | ----------- |
+| **Phase 1** | Foundation  | #1, #2, #3, #14, #15               | In Progress |
+| **Phase 2** | Correctness | #4, #5, #7, #10, #13, GAP-1, GAP-3 | Not Started |
+| **Phase 3** | Production  | #6, #8, #9, #12, #16, #17          | Not Started |
 
 **Phase 1 — Foundation:** Restructure from flat `package main` to standard Go layout, add typed payloads, and establish shared HTTP infrastructure. All subsequent changes target the new layout.
 
@@ -791,6 +791,74 @@ func getTowerClientForAction(rc *RunContext) (*TowerClient, string, error) {
 
 **Location:** `internal/clients/scheduler.go` — lives alongside the other API clients in the `clients` package. Uses `httputil.DoJSON` and `httputil.RetryWithContext` from change #14.
 
+### 17. Kubernetes Secret Informer Cache (Phase 3)
+
+**Context:** The `resolveControllerCreds` function in `tower_launch.go` calls `Clientset.CoreV1().Secrets(ns).List()` with a label selector on every run that launches a Tower job. In production with ~3,250 runs/day across 203 runner pods, this generates thousands of API server round-trips per day for data that rarely changes.
+
+**Current Go implementation** (`internal/handler/tower_launch.go`):
+
+```go
+secrets, err := rc.Clientset.CoreV1().Secrets(ns).List(context.TODO(), metav1.ListOptions{
+    LabelSelector: fmt.Sprintf("babylon.gpte.redhat.com/ansible-control-plane=%s", hostname),
+})
+```
+
+Each call hits the Kubernetes API server. Secrets for Tower controllers change infrequently (credential rotation), so caching with watch-based invalidation is the idiomatic Kubernetes approach.
+
+**Proposed Go implementation:**
+
+Use a `SharedInformer` from `client-go/informers` to maintain an in-memory cache of secrets with the relevant labels. The informer:
+
+1. Performs a single LIST on startup to populate the cache
+2. Maintains a WATCH connection to receive updates (create/update/delete) in real-time via resourceVersion tracking
+3. Provides local cache lookups with zero API server round-trips
+4. Handles reconnection and re-list automatically
+
+```go
+package secrets
+
+import (
+    "fmt"
+    "sync"
+
+    corev1 "k8s.io/api/core/v1"
+    "k8s.io/client-go/informers"
+    "k8s.io/client-go/kubernetes"
+    "k8s.io/client-go/tools/cache"
+)
+
+type SecretCache struct {
+    informer cache.SharedIndexInformer
+    stopCh   chan struct{}
+}
+
+func NewSecretCache(clientset kubernetes.Interface, namespace string) *SecretCache {
+    factory := informers.NewSharedInformerFactoryWithOptions(
+        clientset, 0,
+        informers.WithNamespace(namespace),
+        informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
+            opts.LabelSelector = "babylon.gpte.redhat.com/ansible-control-plane"
+        }),
+    )
+    informer := factory.Core().V1().Secrets().Informer()
+    // ...
+}
+
+func (sc *SecretCache) GetByHostname(hostname string) (*corev1.Secret, error) {
+    // Local cache lookup — no API server call
+}
+```
+
+**Scope:** This applies to three secret categories:
+
+1. **Tower controller credentials** — `babylon.gpte.redhat.com/ansible-control-plane={hostname}` label
+2. **Controller scheduler API key** — `controller_scheduler_credentials` (used by change #16)
+3. **Sandbox API credentials** — if sandbox API authentication moves to K8s secrets
+
+**Location:** `internal/secrets/cache.go` — new package for secret cache management. Initialized in `cmd/babylon-runner/main.go`, passed to `RunContext` or handlers that need secret lookups.
+
+**Dependencies:** Change #3 (client-go, already landed in Phase 1).
+
 ## New Dependencies
 
 | Dependency                            | Purpose               | Justification                                 |
@@ -827,6 +895,7 @@ Changes are independent and can be implemented incrementally. See **Implementati
 - #6 HTTP client reuse and token caching (includes GAP-2: sandbox API token caching)
 - #12 Polling loop optimization
 - #16 Controller scheduler integration — depends on #3 (client-go for secret reading), #5 (TLS), #14 (httputil)
+- #17 Kubernetes secret informer cache — depends on #3 (client-go)
 
 Each phase can be validated independently with the existing toggle mechanism (`spec.runner: babylon-go`) on a live cluster.
 
