@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -123,7 +122,7 @@ func resolveControllerCreds(rc *runner.RunContext, controller map[string]interfa
 		}
 	}
 	if ns != "" && hostname != "" && rc.Clientset != nil {
-		secrets, err := rc.Clientset.CoreV1().Secrets(ns).List(context.TODO(), metav1.ListOptions{
+		secrets, err := rc.Clientset.CoreV1().Secrets(ns).List(rc.Ctx, metav1.ListOptions{
 			LabelSelector: fmt.Sprintf("babylon.gpte.redhat.com/ansible-control-plane=%s", hostname),
 		})
 		if err != nil {

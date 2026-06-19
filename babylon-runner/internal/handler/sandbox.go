@@ -81,7 +81,7 @@ func sandboxGet(rc *runner.RunContext, action string) (*SandboxResult, error) {
 		return nil, err
 	}
 
-	ctx := context.TODO()
+	ctx := rc.Ctx
 	placement, statusCode, err := client.GetPlacement(ctx, uuid)
 	if err != nil {
 		return nil, fmt.Errorf("get placement: %w", err)
@@ -204,7 +204,7 @@ func sandboxBook(rc *runner.RunContext, client *clients.SandboxAPIClient) (*Sand
 		reqBody["resources"] = injectVarAnnotations(resolved)
 	}
 
-	ctx := context.TODO()
+	ctx := rc.Ctx
 	result, statusCode, err := client.BookPlacement(ctx, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("book placement: %w", err)
@@ -248,7 +248,7 @@ func sandboxCleanup(rc *runner.RunContext) error {
 		return fmt.Errorf("sandbox cleanup: %w", err)
 	}
 
-	ctx := context.TODO()
+	ctx := rc.Ctx
 	if err := client.ReleasePlacement(ctx, uuid); err != nil {
 		return fmt.Errorf("release placement: %w", err)
 	}
@@ -269,7 +269,7 @@ func sandboxStart(rc *runner.RunContext) error {
 		return err
 	}
 
-	ctx := context.TODO()
+	ctx := rc.Ctx
 	result, err := client.StartPlacement(ctx, uuid)
 	if err != nil {
 		return fmt.Errorf("start placement: %w", err)
@@ -316,7 +316,7 @@ func sandboxStop(rc *runner.RunContext) error {
 		return err
 	}
 
-	ctx := context.TODO()
+	ctx := rc.Ctx
 	result, err := client.StopPlacement(ctx, uuid)
 	if err != nil {
 		return fmt.Errorf("stop placement: %w", err)

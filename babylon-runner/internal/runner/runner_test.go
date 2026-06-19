@@ -27,6 +27,7 @@ func TestDispatchEvent(t *testing.T) {
 	}
 
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Handler: types.Handler{
 				Type: "subjectEvent",
@@ -53,6 +54,7 @@ func TestDispatchAction(t *testing.T) {
 	}
 
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Handler: types.Handler{
 				Type: "action",
@@ -82,6 +84,7 @@ func TestDispatchActionCallback(t *testing.T) {
 	}
 
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Handler: types.Handler{
 				Type: "actionCallback",
@@ -104,6 +107,7 @@ func TestDispatchActionCallback(t *testing.T) {
 func TestDispatchUnknownType(t *testing.T) {
 	handlers := map[string]HandlerFunc{}
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Handler: types.Handler{
 				Type: "unknownType",
@@ -124,6 +128,7 @@ func TestDispatchUnknownType(t *testing.T) {
 func TestDispatchUnregisteredHandler(t *testing.T) {
 	handlers := map[string]HandlerFunc{}
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Handler: types.Handler{
 				Type: "subjectEvent",
@@ -503,6 +508,7 @@ func TestPostResultRetryThenSuccess(t *testing.T) {
 
 func TestRunContext_ConvenienceMethods(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Handler: types.Handler{Type: "action", Name: "provision"},
 			Governor: types.Governor{
@@ -573,6 +579,7 @@ func TestRunContext_ConvenienceMethods(t *testing.T) {
 
 func TestRunContext_CurrentState(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Subject: types.Subject{
 				Spec: types.SubjectSpec{
@@ -588,6 +595,7 @@ func TestRunContext_CurrentState(t *testing.T) {
 
 func TestRunContext_DesiredState(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Subject: types.Subject{
 				Spec: types.SubjectSpec{
@@ -603,6 +611,7 @@ func TestRunContext_DesiredState(t *testing.T) {
 
 func TestRunContext_CheckStatusState(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Subject: types.Subject{
 				Spec: types.SubjectSpec{
@@ -618,6 +627,7 @@ func TestRunContext_CheckStatusState(t *testing.T) {
 
 func TestRunContext_JobVars(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Subject: types.Subject{
 				Spec: types.SubjectSpec{
@@ -642,6 +652,7 @@ func TestRunContext_JobVars(t *testing.T) {
 
 func TestRunContext_GovernorJobVars(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Governor: types.Governor{
 				Spec: types.GovernorSpec{
@@ -665,6 +676,7 @@ func TestRunContext_GovernorJobVars(t *testing.T) {
 
 func TestRunContext_Meta(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Governor: types.Governor{
 				Spec: types.GovernorSpec{
@@ -688,6 +700,7 @@ func TestRunContext_Meta(t *testing.T) {
 
 func TestRunContext_MetaNilReturnsEmpty(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Governor: types.Governor{
 				Spec: types.GovernorSpec{
@@ -707,6 +720,7 @@ func TestRunContext_MetaNilReturnsEmpty(t *testing.T) {
 
 func TestRunContext_UUID(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Subject: types.Subject{
 				Spec: types.SubjectSpec{
@@ -724,6 +738,7 @@ func TestRunContext_UUID(t *testing.T) {
 
 func TestRunContext_GUID(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Subject: types.Subject{
 				Spec: types.SubjectSpec{
@@ -765,6 +780,7 @@ func TestRunContext_SandboxAPIInUse(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rc := &RunContext{
+				Ctx: context.Background(),
 				Payload: types.RunPayload{
 					Governor: types.Governor{
 						Spec: types.GovernorSpec{
@@ -840,6 +856,7 @@ func TestRunContext_DeployerDisabled(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rc := &RunContext{
+				Ctx: context.Background(),
 				Payload: types.RunPayload{
 					Governor: types.Governor{
 						Spec: types.GovernorSpec{
@@ -859,6 +876,7 @@ func TestRunContext_DeployerDisabled(t *testing.T) {
 
 func TestRunContext_StatusActions(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Subject: types.Subject{
 				Status: types.SubjectStatus{
@@ -886,6 +904,7 @@ func TestRunContext_StatusActions(t *testing.T) {
 
 func TestRunContext_StatusTowerJobs(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Subject: types.Subject{
 				Status: types.SubjectStatus{
@@ -906,6 +925,7 @@ func TestRunContext_StatusTowerJobs(t *testing.T) {
 
 func TestRunContext_GovernorActions(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Governor: types.Governor{
 				Spec: types.GovernorSpec{
@@ -929,6 +949,7 @@ func TestRunContext_GovernorActions(t *testing.T) {
 
 func TestRunContext_ActionRetryCount(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Action: &types.Action{
 				Spec: types.ActionSpec{
@@ -946,6 +967,7 @@ func TestRunContext_ActionRetryCount(t *testing.T) {
 
 func TestRunContext_ActionRetryCountNoAction(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{},
 	}
 	if got := rc.ActionRetryCount(); got != 0 {
@@ -956,6 +978,7 @@ func TestRunContext_ActionRetryCountNoAction(t *testing.T) {
 func TestRunContext_IsBeingDeleted(t *testing.T) {
 	ts := "2024-01-01T00:00:00Z"
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Subject: types.Subject{
 				Metadata: types.ObjectMeta{
@@ -971,6 +994,7 @@ func TestRunContext_IsBeingDeleted(t *testing.T) {
 
 func TestRunContext_IsBeingDeletedFalse(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Subject: types.Subject{
 				Metadata: types.ObjectMeta{},
@@ -984,6 +1008,7 @@ func TestRunContext_IsBeingDeletedFalse(t *testing.T) {
 
 func TestRunContext_ActionNameNoAction(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{},
 	}
 	if got := rc.ActionName(); got != "" {
@@ -993,6 +1018,7 @@ func TestRunContext_ActionNameNoAction(t *testing.T) {
 
 func TestRunContext_ActionVars(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Action: &types.Action{
 				Spec: types.ActionSpec{
@@ -1014,6 +1040,7 @@ func TestRunContext_ActionVars(t *testing.T) {
 
 func TestRunContext_ActionVarsNoAction(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{},
 	}
 	if av := rc.ActionVars(); av != nil {
@@ -1024,7 +1051,7 @@ func TestRunContext_ActionVarsNoAction(t *testing.T) {
 // --- Directive tests ---
 
 func TestFinishActionDirective(t *testing.T) {
-	rc := &RunContext{}
+	rc := &RunContext{Ctx: context.Background()}
 	rc.FinishAction("successful")
 
 	if rc.Result.FinishAction == nil {
@@ -1036,7 +1063,7 @@ func TestFinishActionDirective(t *testing.T) {
 }
 
 func TestDeleteSubjectDirective(t *testing.T) {
-	rc := &RunContext{}
+	rc := &RunContext{Ctx: context.Background()}
 	rc.DeleteSubject(true)
 
 	if rc.Result.DeleteSubject == nil {
@@ -1048,7 +1075,7 @@ func TestDeleteSubjectDirective(t *testing.T) {
 }
 
 func TestContinueActionDirective(t *testing.T) {
-	rc := &RunContext{}
+	rc := &RunContext{Ctx: context.Background()}
 	rc.ContinueAction("30s")
 
 	if rc.Result.ContinueAction == nil {
@@ -1061,7 +1088,7 @@ func TestContinueActionDirective(t *testing.T) {
 }
 
 func TestContinueActionWithVarsDirective(t *testing.T) {
-	rc := &RunContext{}
+	rc := &RunContext{Ctx: context.Background()}
 	vars := map[string]interface{}{"action_retry_count": float64(2)}
 	rc.ContinueActionWithVars("1m", vars)
 
@@ -1081,6 +1108,7 @@ func TestContinueActionWithVarsDirective(t *testing.T) {
 
 func TestRunContext_SubjectAllVars(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Subject: types.Subject{
 				Spec: types.SubjectSpec{
@@ -1109,6 +1137,7 @@ func TestRunContext_SubjectAllVars(t *testing.T) {
 
 func TestRunContext_GovernorAllVars(t *testing.T) {
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Governor: types.Governor{
 				Spec: types.GovernorSpec{
@@ -1149,6 +1178,7 @@ func TestSetHandlers(t *testing.T) {
 	r.SetHandlers(handlers)
 
 	rc := &RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Handler: types.Handler{Type: "subjectEvent", Name: "create"},
 		},

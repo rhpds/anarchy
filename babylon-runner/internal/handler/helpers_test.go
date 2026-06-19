@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -84,6 +85,7 @@ func newTestRunContext(t *testing.T, server *httptest.Server) *runner.RunContext
 	}
 
 	return &runner.RunContext{
+		Ctx: context.Background(),
 		Payload: types.RunPayload{
 			Governor: types.Governor{
 				Spec: types.GovernorSpec{

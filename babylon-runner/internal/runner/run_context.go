@@ -11,6 +11,7 @@ import (
 // RunContext holds the per-run state and provides convenience methods
 // for accessing payload data and calling the Anarchy API.
 type RunContext struct {
+	Ctx                  context.Context
 	Payload              types.RunPayload
 	Result               types.RunResult
 	AnarchyClient        *clients.AnarchyClient
@@ -190,10 +191,10 @@ func (rc *RunContext) ContinueActionWithVars(after string, vars map[string]inter
 
 // SubjectUpdate delegates to AnarchyClient.SubjectUpdate for this subject.
 func (rc *RunContext) SubjectUpdate(patch types.SubjectPatch) error {
-	return rc.AnarchyClient.SubjectUpdate(context.TODO(), rc.SubjectName(), patch)
+	return rc.AnarchyClient.SubjectUpdate(rc.Ctx, rc.SubjectName(), patch)
 }
 
 // ScheduleAction delegates to AnarchyClient.ScheduleAction for this subject.
 func (rc *RunContext) ScheduleAction(req types.ScheduleActionRequest) error {
-	return rc.AnarchyClient.ScheduleAction(context.TODO(), rc.SubjectName(), req)
+	return rc.AnarchyClient.ScheduleAction(rc.Ctx, rc.SubjectName(), req)
 }

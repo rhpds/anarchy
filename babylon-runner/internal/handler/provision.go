@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 
@@ -341,7 +340,7 @@ func checkProvisionQueue(rc *runner.RunContext) error {
 		return handleProvisionError(rc)
 	}
 
-	ctx := context.TODO()
+	ctx := rc.Ctx
 	placement, statusCode, err := client.GetPlacement(ctx, uuid)
 	if err != nil {
 		slog.Error("checkProvisionQueue: get placement failed", "subject", rc.SubjectName(), "error", err)

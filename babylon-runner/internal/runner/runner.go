@@ -92,6 +92,7 @@ func (r *Runner) pollOnce(ctx context.Context) error {
 	}
 
 	rc := &RunContext{
+		Ctx:                  ctx,
 		Payload:              *payload,
 		AnarchyClient:        r.anarchy,
 		Clientset:            r.clientset,
