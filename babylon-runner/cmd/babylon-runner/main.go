@@ -36,6 +36,9 @@ func main() {
 
 	clientset, err := buildClientset()
 	if err != nil {
+		if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
+			log.Fatalf("kubernetes client required in-cluster: %v", err)
+		}
 		slog.Warn("kubernetes client not available, secret cache and scheduler disabled", "error", err)
 	}
 

@@ -588,26 +588,26 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 		// Find the "Vault" credential type ID.
 		vaultTypeID, err := tc.SearchResource(token, "/api/v2/credential_types/", "Vault")
 		if err != nil {
-			slog.Warn("LaunchJob: failed to find Vault credential type, skipping vault credentials", "error", err)
-		} else if vaultTypeID == 0 {
-			slog.Warn("LaunchJob: Vault credential type not found, skipping vault credentials")
-		} else {
-			for vaultID, vaultPassword := range config.VaultCredentials {
-				credName := config.Organization + " " + vaultID
-				credID, err := tc.EnsureResource(token, "/api/v2/credentials/", map[string]interface{}{
-					"name":            credName,
-					"credential_type": float64(vaultTypeID),
-					"inputs": map[string]interface{}{
-						"vault_id":       vaultID,
-						"vault_password": vaultPassword,
-					},
-					"organization": float64(orgID),
-				})
-				if err != nil {
-					return 0, fmt.Errorf("ensure vault credential %q: %w", vaultID, err)
-				}
-				credIDs = append(credIDs, credID)
+			return 0, fmt.Errorf("find Vault credential type: %w", err)
+		}
+		if vaultTypeID == 0 {
+			return 0, fmt.Errorf("Vault credential type not found on Tower")
+		}
+		for vaultID, vaultPassword := range config.VaultCredentials {
+			credName := config.Organization + " " + vaultID
+			credID, err := tc.EnsureResource(token, "/api/v2/credentials/", map[string]interface{}{
+				"name":            credName,
+				"credential_type": float64(vaultTypeID),
+				"inputs": map[string]interface{}{
+					"vault_id":       vaultID,
+					"vault_password": vaultPassword,
+				},
+				"organization": float64(orgID),
+			})
+			if err != nil {
+				return 0, fmt.Errorf("ensure vault credential %q: %w", vaultID, err)
 			}
+			credIDs = append(credIDs, credID)
 		}
 	}
 
