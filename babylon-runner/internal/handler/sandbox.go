@@ -278,6 +278,7 @@ func sandboxStart(rc *runner.RunContext) error {
 	// Extract request_id for polling.
 	requestID, _ := result["request_id"].(string)
 	if requestID == "" {
+		slog.Warn("sandboxStart: no request_id in response, skipping poll", "subject", rc.SubjectName())
 		return nil
 	}
 
@@ -325,6 +326,7 @@ func sandboxStop(rc *runner.RunContext) error {
 	// Extract request_id for polling.
 	requestID, _ := result["request_id"].(string)
 	if requestID == "" {
+		slog.Warn("sandboxStop: no request_id in response, skipping poll", "subject", rc.SubjectName())
 		return nil
 	}
 

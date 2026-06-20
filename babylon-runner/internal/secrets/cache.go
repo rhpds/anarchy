@@ -48,7 +48,14 @@ func (c *Cache) Start(ctx context.Context) error {
 		},
 	})
 
-	go c.informer.Run(c.stopCh)
+	go func() {
+		c.informer.Run(c.stopCh)
+		select {
+		case <-c.stopCh:
+		default:
+			slog.Error("secret cache informer exited unexpectedly")
+		}
+	}()
 
 	deadline, hasDeadline := ctx.Deadline()
 	timeout := 30 * time.Second
