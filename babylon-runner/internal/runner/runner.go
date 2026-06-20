@@ -226,6 +226,7 @@ func (r *Runner) postResult(ctx context.Context, runName string, result types.Ru
 	maxRetries := 10
 	baseDelay := r.postRetryDelay
 	maxDelay := 60 * time.Second
+	var lastErr error
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 && baseDelay > 0 {
@@ -251,6 +252,8 @@ func (r *Runner) postResult(ctx context.Context, runName string, result types.Ru
 
 		resp, err := r.client.Do(req)
 		if err != nil {
+			lastErr = err
+			slog.Warn("POST result transport error", "run", runName, "attempt", attempt, "error", err)
 			continue
 		}
 		respBody, _ := io.ReadAll(resp.Body)
@@ -258,12 +261,13 @@ func (r *Runner) postResult(ctx context.Context, runName string, result types.Ru
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			return nil
 		}
+		lastErr = fmt.Errorf("status %d: %s", resp.StatusCode, string(respBody))
 		slog.Warn("POST result failed", "status", resp.StatusCode, "body", string(respBody), "run", runName)
 		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
 			return fmt.Errorf("POST result rejected: %d %s", resp.StatusCode, string(respBody))
 		}
 	}
-	return fmt.Errorf("POST result failed after %d retries", maxRetries)
+	return fmt.Errorf("POST result failed after %d retries: %v", maxRetries, lastErr)
 }
 
 // Dispatch routes a run to the appropriate handler based on handler type and name.

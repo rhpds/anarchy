@@ -147,6 +147,7 @@ func handleDeployerJobSuccess(rc *runner.RunContext, action string, jobStatus ma
 		return handleUpdateComplete(rc)
 	default:
 		slog.Warn("handleDeployerJobSuccess: unknown action", "action", action, "subject", rc.SubjectName())
+		rc.FinishAction("successful")
 		return nil
 	}
 }
