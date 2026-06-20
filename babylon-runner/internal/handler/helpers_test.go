@@ -117,6 +117,7 @@ func newTestRunContext(t *testing.T, server *httptest.Server) *runner.RunContext
 		Result:               types.RunResult{Status: "successful"},
 		AnarchyClient:        clients.NewAnarchyClient(cfg),
 		TowerTLSConfig:       &tls.Config{InsecureSkipVerify: true},
+		TowerClientPool:      clients.NewTowerClientPool(),
 		ActionRetryIntervals: []string{"1m", "5m", "10m", "30m", "1h", "2h", "4h", "8h", "16h", "1d"},
 	}
 }

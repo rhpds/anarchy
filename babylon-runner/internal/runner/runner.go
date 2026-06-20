@@ -32,6 +32,7 @@ type Runner struct {
 	handlers       map[string]HandlerFunc
 	postRetryDelay time.Duration // base delay between POST retries; 0 in tests
 	towerTLSConfig *tls.Config
+	towerPool      *clients.TowerClientPool
 	ready             atomic.Bool
 	consecutiveErrors atomic.Int32
 }
@@ -51,6 +52,7 @@ func New(cfg Config, clientset kubernetes.Interface, towerTLSConfig *tls.Config)
 		handlers:       make(map[string]HandlerFunc),
 		postRetryDelay: 5 * time.Second,
 		towerTLSConfig: towerTLSConfig,
+		towerPool:      clients.NewTowerClientPool(),
 	}
 }
 
@@ -61,6 +63,9 @@ func (r *Runner) SetHandlers(handlers map[string]HandlerFunc) {
 
 // IsReady reports whether the runner has successfully contacted the Anarchy API.
 func (r *Runner) IsReady() bool { return r.ready.Load() }
+
+// TowerPool returns the shared Tower client pool for token reuse.
+func (r *Runner) TowerPool() *clients.TowerClientPool { return r.towerPool }
 
 // Run starts the polling loop. It stops when the context is cancelled.
 func (r *Runner) Run(ctx context.Context) {
@@ -118,6 +123,7 @@ func (r *Runner) pollOnce(ctx context.Context) error {
 		Clientset:            r.clientset,
 		DefaultSandboxAPIURL: r.config.SandboxAPIURL,
 		TowerTLSConfig:       r.towerTLSConfig,
+		TowerClientPool:      r.towerPool,
 		ActionRetryIntervals: r.config.ActionRetryIntervals,
 		Result: types.RunResult{
 			Status: "successful",

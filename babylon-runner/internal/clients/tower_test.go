@@ -1,11 +1,14 @@
 package clients
 
 import (
+	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -856,5 +859,65 @@ func TestGetJobCount(t *testing.T) {
 				t.Errorf("GetJobCount() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestTowerClientTokenCache(t *testing.T) {
+	var tokenCreateCount atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/tokens/":
+			tokenCreateCount.Add(1)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"token": "cached-token",
+				"id":    float64(42),
+			})
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	host := strings.TrimPrefix(server.URL, "http://")
+	tc := NewTowerClient(host, "user", "pass", &tls.Config{InsecureSkipVerify: true})
+	tc.baseURL = server.URL
+
+	ctx := context.Background()
+	tok1, err := tc.GetToken(ctx)
+	if err != nil {
+		t.Fatalf("GetToken: %v", err)
+	}
+	if tok1 != "cached-token" {
+		t.Errorf("token = %q, want %q", tok1, "cached-token")
+	}
+
+	tok2, err := tc.GetToken(ctx)
+	if err != nil {
+		t.Fatalf("GetToken second call: %v", err)
+	}
+	if tok2 != "cached-token" {
+		t.Errorf("second token = %q, want %q", tok2, "cached-token")
+	}
+
+	if tokenCreateCount.Load() != 1 {
+		t.Errorf("token create count = %d, want 1 (should be cached)", tokenCreateCount.Load())
+	}
+
+	tc.Close(ctx)
+}
+
+func TestTowerClientPoolReuse(t *testing.T) {
+	pool := NewTowerClientPool()
+	tc1 := pool.Get("host1", "user", "pass", nil)
+	tc2 := pool.Get("host1", "user", "pass", nil)
+
+	if tc1 != tc2 {
+		t.Error("pool should return the same client for the same hostname")
+	}
+
+	tc3 := pool.Get("host2", "user", "pass", nil)
+	if tc1 == tc3 {
+		t.Error("pool should return different clients for different hostnames")
 	}
 }

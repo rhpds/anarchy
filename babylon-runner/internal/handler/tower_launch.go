@@ -79,7 +79,7 @@ func getTowerClientForAction(rc *runner.RunContext) (*clients.TowerClient, strin
 		return nil, "", fmt.Errorf("credentials for %s: %w", hostname, err)
 	}
 
-	return clients.NewTowerClient(hostname, username, password, rc.TowerTLSConfig), hostname, nil
+	return rc.TowerClientPool.Get(hostname, username, password, rc.TowerTLSConfig), hostname, nil
 }
 
 // resolveControllerCreds returns (username, password) for a controller entry.
@@ -279,7 +279,7 @@ func getTowerClientForHost(rc *runner.RunContext, hostname string) (*clients.Tow
 			if err != nil {
 				return nil, fmt.Errorf("credentials for %s: %w", hostname, err)
 			}
-			return clients.NewTowerClient(hostname, username, password, rc.TowerTLSConfig), nil
+			return rc.TowerClientPool.Get(hostname, username, password, rc.TowerTLSConfig), nil
 		}
 	}
 
@@ -516,12 +516,11 @@ func cancelTowerJob(rc *runner.RunContext, action string) {
 		return
 	}
 
-	token, tokenID, err := tc.CreateOAuthToken()
+	token, err := tc.GetToken(rc.Ctx)
 	if err != nil {
-		slog.Error("cancelTowerJob: cannot create oauth token", "error", err)
+		slog.Error("cancelTowerJob: cannot get oauth token", "error", err)
 		return
 	}
-	defer func() { _ = tc.DeleteOAuthToken(tokenID) }()
 
 	if err := tc.CancelJob(token, int(jobIDFloat)); err != nil {
 		slog.Error("cancelTowerJob: failed to cancel job", "job", int(jobIDFloat), "error", err)

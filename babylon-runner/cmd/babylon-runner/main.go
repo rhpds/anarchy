@@ -39,6 +39,7 @@ func main() {
 	}
 
 	r := runner.New(cfg, clientset, towerTLSConfig)
+	defer r.TowerPool().CloseAll(context.Background())
 	r.SetHandlers(handler.Register())
 
 	metricsServer := metrics.NewServer(cfg.MetricsPort, r.IsReady)

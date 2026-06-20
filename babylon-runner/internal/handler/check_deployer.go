@@ -44,18 +44,13 @@ func checkDeployerJob(rc *runner.RunContext, action string) error {
 		return nil
 	}
 
-	// Create OAuth token
-	token, tokenID, err := tc.CreateOAuthToken()
+	// Get OAuth token (cached by pool).
+	token, err := tc.GetToken(rc.Ctx)
 	if err != nil {
-		slog.Error("checkDeployerJob: failed to create oauth token", "action", action, "subject", rc.SubjectName(), "error", err)
+		slog.Error("checkDeployerJob: failed to get oauth token", "action", action, "subject", rc.SubjectName(), "error", err)
 		rc.ContinueAction("5m")
 		return nil
 	}
-	defer func() {
-		if delErr := tc.DeleteOAuthToken(tokenID); delErr != nil {
-			slog.Error("checkDeployerJob: failed to delete oauth token", "tokenID", tokenID, "error", delErr)
-		}
-	}()
 
 	// Get job status
 	jobStatus, err := tc.GetJobStatus(token, deployerJob)

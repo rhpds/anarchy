@@ -2,6 +2,7 @@ package clients
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/rhpds/anarchy/babylon-runner/internal/httputil"
 	"github.com/rhpds/anarchy/babylon-runner/internal/metrics"
@@ -109,16 +112,18 @@ type EEConfig struct {
 
 // TowerClient communicates with a Tower/AAP2 instance via its REST API.
 type TowerClient struct {
-	baseURL  string
-	username string
-	password string
-	client   *http.Client
+	baseURL    string
+	username   string
+	password   string
+	client     *http.Client
+	tokenCache *httputil.TokenCache
+	tokenID    int
 }
 
 // NewTowerClient creates a TowerClient for the given hostname.
 // tlsConfig is optional — nil uses Go defaults (system CA, verify enabled).
 func NewTowerClient(hostname, username, password string, tlsConfig *tls.Config) *TowerClient {
-	return &TowerClient{
+	tc := &TowerClient{
 		baseURL:  "https://" + hostname,
 		username: username,
 		password: password,
@@ -126,6 +131,33 @@ func NewTowerClient(hostname, username, password string, tlsConfig *tls.Config) 
 			Transport: httputil.InstrumentedTransport(httputil.NewTransport(tlsConfig), metrics.TowerJobDuration, "http"),
 		},
 	}
+	tc.tokenCache = httputil.NewTokenCache(
+		func(ctx context.Context) (string, time.Duration, error) {
+			token, id, err := tc.CreateOAuthToken()
+			if err != nil {
+				return "", 0, err
+			}
+			tc.tokenID = id
+			return token, 30 * time.Minute, nil
+		},
+		httputil.WithCleanup(func(ctx context.Context, token string) error {
+			if tc.tokenID > 0 {
+				return tc.DeleteOAuthToken(tc.tokenID)
+			}
+			return nil
+		}),
+	)
+	return tc
+}
+
+// GetToken returns a cached OAuth token, creating one if needed.
+func (tc *TowerClient) GetToken(ctx context.Context) (string, error) {
+	return tc.tokenCache.Get(ctx)
+}
+
+// Close releases the cached OAuth token (if any).
+func (tc *TowerClient) Close(ctx context.Context) error {
+	return tc.tokenCache.Close(ctx)
 }
 
 // SelectController picks a controller from the list based on the selection mode.
@@ -694,4 +726,46 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 	}
 
 	return jobID, nil
+}
+
+// TowerClientPool manages a set of TowerClients keyed by hostname,
+// reusing clients (and their cached tokens) across runs.
+type TowerClientPool struct {
+	mu      sync.RWMutex
+	clients map[string]*TowerClient
+}
+
+// NewTowerClientPool creates an empty pool.
+func NewTowerClientPool() *TowerClientPool {
+	return &TowerClientPool{
+		clients: make(map[string]*TowerClient),
+	}
+}
+
+// Get returns an existing client for the hostname, or creates one.
+func (p *TowerClientPool) Get(hostname, username, password string, tlsConfig *tls.Config) *TowerClient {
+	p.mu.RLock()
+	if c, ok := p.clients[hostname]; ok {
+		p.mu.RUnlock()
+		return c
+	}
+	p.mu.RUnlock()
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if c, ok := p.clients[hostname]; ok {
+		return c
+	}
+	c := NewTowerClient(hostname, username, password, tlsConfig)
+	p.clients[hostname] = c
+	return c
+}
+
+// CloseAll releases cached tokens for every client in the pool.
+func (p *TowerClientPool) CloseAll(ctx context.Context) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, c := range p.clients {
+		c.Close(ctx)
+	}
 }
