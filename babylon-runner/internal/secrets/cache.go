@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -15,6 +16,7 @@ import (
 type Cache struct {
 	informer cache.SharedIndexInformer
 	stopCh   chan struct{}
+	stopOnce sync.Once
 }
 
 func NewCache(clientset kubernetes.Interface, namespace string) *Cache {
@@ -99,5 +101,7 @@ func (c *Cache) GetByLabel(labelKey, labelValue string) (*corev1.Secret, bool) {
 }
 
 func (c *Cache) Stop() {
-	close(c.stopCh)
+	c.stopOnce.Do(func() {
+		close(c.stopCh)
+	})
 }

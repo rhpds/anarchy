@@ -195,6 +195,13 @@ func TestAfterTimestamp(t *testing.T) {
 			t.Fatalf("invalid RFC3339: %v", err)
 		}
 	})
+
+	t.Run("invalid duration logs warning", func(t *testing.T) {
+		ts := AfterTimestamp("notaduration")
+		if _, err := time.Parse(time.RFC3339, ts); err != nil {
+			t.Fatalf("invalid RFC3339: %v", err)
+		}
+	})
 }
 
 func TestDeepCopyMap(t *testing.T) {

@@ -3,6 +3,7 @@ package types
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -124,6 +125,7 @@ func AfterTimestamp(after string) string {
 	}
 	d, err := time.ParseDuration(after)
 	if err != nil {
+		slog.Warn("AfterTimestamp: invalid duration, using now", "input", after, "error", err)
 		return NowUTC()
 	}
 	return time.Now().UTC().Add(d).Format(time.RFC3339)
