@@ -12,10 +12,12 @@ import (
 	"github.com/rhpds/anarchy/babylon-runner/internal/types"
 )
 
+// Candidate represents a controller hostname eligible for job scheduling.
 type Candidate struct {
 	Domain string `json:"domain"`
 }
 
+// EvaluateRequest is the request body for the controller scheduler API.
 type EvaluateRequest struct {
 	Candidates    []Candidate                    `json:"candidates"`
 	RequireLabels map[string]types.StringOrSlice `json:"require_labels,omitempty"`
@@ -23,6 +25,7 @@ type EvaluateRequest struct {
 	InstanceGroup string                         `json:"instance_group,omitempty"`
 }
 
+// RankedController is a scored controller returned by the scheduler.
 type RankedController struct {
 	Domain   string  `json:"domain"`
 	Name     string  `json:"name"`
@@ -30,11 +33,13 @@ type RankedController struct {
 	Eligible bool    `json:"eligible"`
 }
 
+// EvaluateResponse is the response from the controller scheduler API.
 type EvaluateResponse struct {
 	Ranked   []RankedController `json:"ranked"`
 	Strategy string             `json:"strategy"`
 }
 
+// SchedulerClient communicates with the controller-scheduler API.
 type SchedulerClient struct {
 	baseURL string
 	apiKey  string

@@ -13,6 +13,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
+// Cache watches Kubernetes Secrets via a SharedIndexInformer and
+// provides label-based lookups for Tower credentials.
 type Cache struct {
 	informer cache.SharedIndexInformer
 	stopCh   chan struct{}

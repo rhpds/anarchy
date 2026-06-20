@@ -10,7 +10,7 @@ import (
 func Register() map[string]runner.HandlerFunc {
 	// Callback handlers: immediately reschedule the action so that
 	// the next action run re-enters the main handler (e.g. handleStart)
-	// which calls checkDeployerJob. See main.go comments for rationale.
+	// which calls checkDeployerJob.
 	callbackContinue := func(rc *runner.RunContext) error {
 		slog.Info("callback received, scheduling immediate action re-check",
 			"action", rc.ActionName(), "subject", rc.SubjectName())

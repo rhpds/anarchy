@@ -220,7 +220,7 @@ func (r *Runner) getRun(ctx context.Context) (*types.RunPayload, error) {
 }
 
 // postResult posts the handler result back to Anarchy. It retries up to
-// 10 times with increasing delays capped at 60s.
+// maxRetries times with increasing delays capped at 60s.
 func (r *Runner) postResult(ctx context.Context, runName string, result types.RunResult) error {
 	url := fmt.Sprintf("%s/run/%s", r.config.AnarchyURL, runName)
 	maxRetries := 10

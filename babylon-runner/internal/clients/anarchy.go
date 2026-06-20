@@ -60,7 +60,7 @@ func (a *AnarchyClient) ScheduleAction(ctx context.Context, subjectName string, 
 }
 
 // doWithRetry performs an HTTP request with JSON body, retrying up to
-// len(retryDelays) times on non-200 responses or transport errors.
+// len(retryDelays) times on 4xx/5xx responses or transport errors.
 func (a *AnarchyClient) doWithRetry(ctx context.Context, method, url string, body interface{}) error {
 	return httputil.RetryWithContext(ctx, a.retryDelays, func() error {
 		status, err := httputil.DoJSON(ctx, a.client, method, url,

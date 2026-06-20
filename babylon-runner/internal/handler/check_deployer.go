@@ -154,11 +154,18 @@ func handleDeployerJobSuccess(rc *runner.RunContext, action string, jobStatus ma
 
 // handleDestroyFailure handles destroy job error/failure/canceled.
 // Always retries -- catch_all in handleDestroy handles final cleanup.
-// Canceled uses fixed 1m retry; error/failed use dynamic backoff.
-// Error/failed set healthy=false; canceled does not.
+// Canceled uses fixed 1m retry; error/failed use dynamic backoff
+// and set healthy=false (consistent with start/stop/update handlers).
 func handleDestroyFailure(rc *runner.RunContext, status string) error {
 	ts := types.NowUTC()
 	state := fmt.Sprintf("destroy-%s", status)
+
+	specVars := map[string]interface{}{
+		"current_state": state,
+	}
+	if status != "canceled" {
+		specVars["healthy"] = false
+	}
 
 	if err := rc.SubjectUpdate(types.SubjectPatch{
 		Patch: types.PatchBody{
@@ -166,9 +173,7 @@ func handleDestroyFailure(rc *runner.RunContext, status string) error {
 				Labels: map[string]string{"state": state},
 			},
 			Spec: &types.PatchSpec{
-				Vars: map[string]interface{}{
-					"current_state": state,
-				},
+				Vars: specVars,
 			},
 			Status: map[string]interface{}{
 				"actions": map[string]interface{}{
