@@ -23,6 +23,7 @@ type Config struct {
 	RunnerName           string
 	RunnerToken          string
 	PodName              string
+	Namespace            string
 	PollingInterval      time.Duration
 	RequestTimeout       time.Duration
 	SandboxAPIURL        string
@@ -57,6 +58,12 @@ func ConfigFromEnv() (Config, error) {
 	cfg.PodName = os.Getenv("HOSTNAME")
 	if cfg.PodName == "" {
 		return cfg, fmt.Errorf("HOSTNAME is required")
+	}
+	cfg.Namespace = os.Getenv("OPERATOR_NAMESPACE")
+	if cfg.Namespace == "" {
+		if nsBytes, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace"); err == nil {
+			cfg.Namespace = string(nsBytes)
+		}
 	}
 	cfg.PollingInterval = time.Duration(envInt("POLLING_INTERVAL", 5)) * time.Second
 	cfg.RequestTimeout = time.Duration(envInt("REQUEST_TIMEOUT", 35)) * time.Second

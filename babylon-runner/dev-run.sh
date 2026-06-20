@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-NAMESPACE="${ANARCHY_NAMESPACE:-babylon-anarchy-test}"
+NAMESPACE="${OPERATOR_NAMESPACE:-babylon-anarchy-test}"
 RUNNER="${RUNNER_NAME:-default}"
 DEV_POD="babylon-runner-godev"
 DEV_TOKEN=$(python3 -c "import random, string; print(''.join(random.choices(string.ascii_lowercase + string.digits, k=24)))")
@@ -77,7 +77,7 @@ oc wait --for=condition=Ready pod/"$DEV_POD" -n "$NAMESPACE" --timeout=60s
 
 export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
 export ANARCHY_URL="${ANARCHY_URL:-http://localhost:5000}"
-export ANARCHY_NAMESPACE="$NAMESPACE"
+export OPERATOR_NAMESPACE="$NAMESPACE"
 export RUNNER_NAME="$RUNNER"
 export RUNNER_TOKEN="$DEV_TOKEN"
 export HOSTNAME="$DEV_POD"

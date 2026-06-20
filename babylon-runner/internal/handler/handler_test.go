@@ -816,9 +816,10 @@ func TestCheckDeployerJobSuccessful(t *testing.T) {
 	}
 	rc.Payload.Governor.Spec.Vars.Meta = &types.Meta{
 		AnsibleControllers: []map[string]interface{}{
-			{"hostname": host, "user": "admin", "password": "secret"},
+			{"hostname": host},
 		},
 	}
+	rc.SecretCache = newTestSecretCache(host, "admin", "secret")
 	rc.Payload.Subject.Status.TowerJobs = map[string]interface{}{
 		"provision": map[string]interface{}{
 			"deployerJob": float64(42),
@@ -853,9 +854,10 @@ func TestCheckDeployerJobFailed(t *testing.T) {
 	}
 	rc.Payload.Governor.Spec.Vars.Meta = &types.Meta{
 		AnsibleControllers: []map[string]interface{}{
-			{"hostname": host, "user": "admin", "password": "secret"},
+			{"hostname": host},
 		},
 	}
+	rc.SecretCache = newTestSecretCache(host, "admin", "secret")
 	rc.Payload.Subject.Status.TowerJobs = map[string]interface{}{
 		"provision": map[string]interface{}{
 			"deployerJob": float64(42),
@@ -890,9 +892,10 @@ func TestCheckDeployerJobStillRunning(t *testing.T) {
 	}
 	rc.Payload.Governor.Spec.Vars.Meta = &types.Meta{
 		AnsibleControllers: []map[string]interface{}{
-			{"hostname": host, "user": "admin", "password": "secret"},
+			{"hostname": host},
 		},
 	}
+	rc.SecretCache = newTestSecretCache(host, "admin", "secret")
 	rc.Payload.Subject.Status.TowerJobs = map[string]interface{}{
 		"provision": map[string]interface{}{
 			"deployerJob": float64(42),
@@ -1008,9 +1011,10 @@ func TestCheckDeployerJobCanceled(t *testing.T) {
 	}
 	rc.Payload.Governor.Spec.Vars.Meta = &types.Meta{
 		AnsibleControllers: []map[string]interface{}{
-			{"hostname": host, "user": "admin", "password": "secret"},
+			{"hostname": host},
 		},
 	}
+	rc.SecretCache = newTestSecretCache(host, "admin", "secret")
 	rc.Payload.Subject.Status.TowerJobs = map[string]interface{}{
 		"provision": map[string]interface{}{
 			"deployerJob": float64(42),
@@ -1057,9 +1061,10 @@ func TestCheckDeployerJobError(t *testing.T) {
 	}
 	rc.Payload.Governor.Spec.Vars.Meta = &types.Meta{
 		AnsibleControllers: []map[string]interface{}{
-			{"hostname": host, "user": "admin", "password": "secret"},
+			{"hostname": host},
 		},
 	}
+	rc.SecretCache = newTestSecretCache(host, "admin", "secret")
 	rc.Payload.Subject.Status.TowerJobs = map[string]interface{}{
 		"provision": map[string]interface{}{
 			"deployerJob": float64(42),

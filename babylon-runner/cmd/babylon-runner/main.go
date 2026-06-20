@@ -12,6 +12,7 @@ import (
 	"github.com/rhpds/anarchy/babylon-runner/internal/httputil"
 	"github.com/rhpds/anarchy/babylon-runner/internal/metrics"
 	"github.com/rhpds/anarchy/babylon-runner/internal/runner"
+	"github.com/rhpds/anarchy/babylon-runner/internal/secrets"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -41,6 +42,16 @@ func main() {
 	r := runner.New(cfg, clientset, towerTLSConfig)
 	defer r.TowerPool().CloseAll(context.Background())
 	r.SetHandlers(handler.Register())
+
+	if clientset != nil && cfg.Namespace != "" {
+		secretCache := secrets.NewCache(clientset, cfg.Namespace)
+		if err := secretCache.Start(ctx); err != nil {
+			slog.Warn("secret cache failed to start", "error", err)
+		} else {
+			r.SetSecretCache(secretCache)
+			defer secretCache.Stop()
+		}
+	}
 
 	metricsServer := metrics.NewServer(cfg.MetricsPort, r.IsReady)
 	go func() {

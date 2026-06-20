@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 
 	"github.com/rhpds/anarchy/babylon-runner/internal/clients"
+	"github.com/rhpds/anarchy/babylon-runner/internal/secrets"
 	"github.com/rhpds/anarchy/babylon-runner/internal/types"
 	"k8s.io/client-go/kubernetes"
 )
@@ -23,6 +24,7 @@ type RunContext struct {
 	SandboxClientOpts    []clients.SandboxAPIOption // optional; used in tests to disable retries
 	TowerTLSConfig       *tls.Config
 	TowerClientPool      *clients.TowerClientPool
+	SecretCache          *secrets.Cache
 	ActionRetryIntervals []string
 }
 

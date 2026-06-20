@@ -15,6 +15,7 @@ import (
 
 	"github.com/rhpds/anarchy/babylon-runner/internal/clients"
 	"github.com/rhpds/anarchy/babylon-runner/internal/metrics"
+	"github.com/rhpds/anarchy/babylon-runner/internal/secrets"
 	"github.com/rhpds/anarchy/babylon-runner/internal/types"
 	"k8s.io/client-go/kubernetes"
 )
@@ -33,6 +34,7 @@ type Runner struct {
 	postRetryDelay time.Duration // base delay between POST retries; 0 in tests
 	towerTLSConfig *tls.Config
 	towerPool      *clients.TowerClientPool
+	secretCache    *secrets.Cache
 	ready             atomic.Bool
 	consecutiveErrors atomic.Int32
 }
@@ -66,6 +68,9 @@ func (r *Runner) IsReady() bool { return r.ready.Load() }
 
 // TowerPool returns the shared Tower client pool for token reuse.
 func (r *Runner) TowerPool() *clients.TowerClientPool { return r.towerPool }
+
+// SetSecretCache sets the Kubernetes secret informer cache.
+func (r *Runner) SetSecretCache(c *secrets.Cache) { r.secretCache = c }
 
 // Run starts the polling loop. It stops when the context is cancelled.
 func (r *Runner) Run(ctx context.Context) {
@@ -124,6 +129,7 @@ func (r *Runner) pollOnce(ctx context.Context) error {
 		DefaultSandboxAPIURL: r.config.SandboxAPIURL,
 		TowerTLSConfig:       r.towerTLSConfig,
 		TowerClientPool:      r.towerPool,
+		SecretCache:          r.secretCache,
 		ActionRetryIntervals: r.config.ActionRetryIntervals,
 		Result: types.RunResult{
 			Status: "successful",

@@ -166,10 +166,7 @@ func TestGetTowerClientForAction(t *testing.T) {
 			setup: func(rc *runner.RunContext) {
 				rc.Payload.Governor.Spec.Vars.Meta = &types.Meta{
 					AnsibleControllers: []map[string]interface{}{
-						{
-							"user":     "admin",
-							"password": "secret",
-						},
+						{},
 					},
 				}
 			},
@@ -183,11 +180,10 @@ func TestGetTowerClientForAction(t *testing.T) {
 					AnsibleControllers: []map[string]interface{}{
 						{
 							"hostname": "tower1.example.com",
-							"user":     "admin",
-							"password": "secret",
 						},
 					},
 				}
+				rc.SecretCache = newTestSecretCache("tower1.example.com", "admin", "secret")
 			},
 			wantHost: "tower1.example.com",
 			wantErr:  false,
@@ -200,24 +196,23 @@ func TestGetTowerClientForAction(t *testing.T) {
 					AnsibleControllers: []map[string]interface{}{
 						{
 							"hostname":         "tower1.example.com",
-							"user":             "admin",
-							"password":         "secret",
 							"active_job_count": float64(10),
 						},
 						{
 							"hostname":         "tower2.example.com",
-							"user":             "admin",
-							"password":         "secret",
 							"active_job_count": float64(5),
 						},
 						{
 							"hostname":         "tower3.example.com",
-							"user":             "admin",
-							"password":         "secret",
 							"active_job_count": float64(15),
 						},
 					},
 				}
+				rc.SecretCache = newTestSecretCacheMulti(map[string][2]string{
+					"tower1.example.com": {"admin", "secret"},
+					"tower2.example.com": {"admin", "secret"},
+					"tower3.example.com": {"admin", "secret"},
+				})
 			},
 			wantHost: "tower2.example.com",
 			wantErr:  false,
@@ -230,16 +225,16 @@ func TestGetTowerClientForAction(t *testing.T) {
 					AnsibleControllers: []map[string]interface{}{
 						{
 							"hostname": "tower1.example.com",
-							"user":     "admin",
-							"password": "secret",
 						},
 						{
 							"hostname": "tower2.example.com",
-							"user":     "admin",
-							"password": "secret",
 						},
 					},
 				}
+				rc.SecretCache = newTestSecretCacheMulti(map[string][2]string{
+					"tower1.example.com": {"admin", "secret"},
+					"tower2.example.com": {"admin", "secret"},
+				})
 			},
 			// Can't predict which one with random, just check no error.
 			wantErr: false,

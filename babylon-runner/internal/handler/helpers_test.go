@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,7 +14,12 @@ import (
 
 	"github.com/rhpds/anarchy/babylon-runner/internal/clients"
 	"github.com/rhpds/anarchy/babylon-runner/internal/runner"
+	"github.com/rhpds/anarchy/babylon-runner/internal/secrets"
 	"github.com/rhpds/anarchy/babylon-runner/internal/types"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 // assertAfterTimestamp checks that an "after" field is a valid UTC
@@ -172,7 +178,8 @@ func towerServerHost(t *testing.T, ts *httptest.Server) string {
 }
 
 // withTowerServer configures the RunContext with a mock tower server
-// by setting the __meta__.ansible_controllers and deployer SCM config.
+// by setting the __meta__.ansible_controllers, deployer SCM config, and
+// a secret cache containing the controller credentials.
 func withTowerServer(rc *runner.RunContext, towerServer *httptest.Server) {
 	host := ""
 	if u, err := url.Parse(towerServer.URL); err == nil {
@@ -187,11 +194,11 @@ func withTowerServer(rc *runner.RunContext, towerServer *httptest.Server) {
 		AnsibleControllers: []map[string]interface{}{
 			{
 				"hostname": host,
-				"user":     "admin",
-				"password": "secret",
 			},
 		},
 	}
+
+	rc.SecretCache = newTestSecretCache(host, "admin", "secret")
 }
 
 // withTowerServerAndMeta configures the RunContext similarly to
@@ -215,11 +222,50 @@ func withTowerServerAndMeta(rc *runner.RunContext, towerServer *httptest.Server)
 	meta.AnsibleControllers = []map[string]interface{}{
 		{
 			"hostname": host,
-			"user":     "admin",
-			"password": "secret",
 		},
 	}
 	rc.Payload.Governor.Spec.Vars.Meta = meta
+
+	rc.SecretCache = newTestSecretCache(host, "admin", "secret")
+}
+
+// newTestSecretCache creates a secrets.Cache backed by a fake clientset
+// with a single secret containing the given credentials.
+func newTestSecretCache(hostname, user, password string) *secrets.Cache {
+	return newTestSecretCacheMulti(map[string][2]string{
+		hostname: {user, password},
+	})
+}
+
+// newTestSecretCacheMulti creates a secrets.Cache with multiple controller
+// credential secrets, keyed by hostname.
+func newTestSecretCacheMulti(creds map[string][2]string) *secrets.Cache {
+	var objs []k8sruntime.Object
+	i := 0
+	for hostname, up := range creds {
+		objs = append(objs, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("tower-creds-%d", i),
+				Namespace: "test",
+				Labels: map[string]string{
+					"babylon.gpte.redhat.com/ansible-control-plane": hostname,
+				},
+			},
+			Data: map[string][]byte{
+				"user":     []byte(up[0]),
+				"password": []byte(up[1]),
+			},
+		})
+		i++
+	}
+	clientset := fake.NewSimpleClientset(objs...)
+	c := secrets.NewCache(clientset, "test")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := c.Start(ctx); err != nil {
+		panic("test secret cache failed to start: " + err.Error())
+	}
+	return c
 }
 
 // contains is a helper for checking substring presence.

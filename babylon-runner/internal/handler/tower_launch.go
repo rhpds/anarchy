@@ -3,13 +3,11 @@ package handler
 import (
 	"fmt"
 	"log/slog"
-	"os"
 	"regexp"
 
 	"github.com/rhpds/anarchy/babylon-runner/internal/clients"
 	"github.com/rhpds/anarchy/babylon-runner/internal/runner"
 	"github.com/rhpds/anarchy/babylon-runner/internal/types"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // Default deployer entry points from babylon governor defaults/main.yaml.
@@ -82,64 +80,29 @@ func getTowerClientForAction(rc *runner.RunContext) (*clients.TowerClient, strin
 	return rc.TowerClientPool.Get(hostname, username, password, rc.TowerTLSConfig), hostname, nil
 }
 
-// resolveControllerCreds returns (username, password) for a controller entry.
-// It tries, in order:
-//  1. user/password fields directly on the controller map
-//  2. babylon_tower varSecret from governor vars
-//  3. K8s Secret with label babylon.gpte.redhat.com/ansible-control-plane={hostname}
+// resolveControllerCreds returns (username, password) for a controller by
+// looking up the K8s Secret labeled babylon.gpte.redhat.com/ansible-control-plane={hostname}
+// from the informer cache.
 func resolveControllerCreds(rc *runner.RunContext, controller map[string]interface{}) (string, string, error) {
 	hostname, _ := controller["hostname"].(string)
-	username, _ := controller["user"].(string)
-	password, _ := controller["password"].(string)
-
-	if username != "" && password != "" {
-		return username, password, nil
+	if hostname == "" {
+		return "", "", fmt.Errorf("controller has no hostname")
 	}
 
-	// Fallback 1: babylon_tower varSecret (resolved by operator into governor vars).
-	bt, _ := rc.Payload.Governor.Spec.Vars.Get("babylon_tower").(map[string]interface{})
-	if bt != nil {
-		if u, ok := bt["user"].(string); ok && username == "" {
-			username = u
-		}
-		if p, ok := bt["password"].(string); ok && password == "" {
-			password = p
-		}
-		if username != "" && password != "" {
-			return username, password, nil
-		}
+	if rc.SecretCache == nil {
+		return "", "", fmt.Errorf("secret cache not available, cannot resolve credentials for %s", hostname)
 	}
 
-	// Fallback 2: K8s Secret lookup by controller hostname label.
-	ns := os.Getenv("ANARCHY_NAMESPACE")
-	if ns == "" {
-		ns = rc.Payload.Subject.Metadata.Namespace
-	}
-	if ns == "" {
-		// Derive namespace from the pod's service account.
-		if nsBytes, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace"); err == nil {
-			ns = string(nsBytes)
-		}
-	}
-	if ns != "" && hostname != "" && rc.Clientset != nil {
-		secrets, err := rc.Clientset.CoreV1().Secrets(ns).List(rc.Ctx, metav1.ListOptions{
-			LabelSelector: fmt.Sprintf("babylon.gpte.redhat.com/ansible-control-plane=%s", hostname),
-		})
-		if err != nil {
-			slog.Warn("k8s secret lookup failed", "hostname", hostname, "error", err)
-		} else if len(secrets.Items) > 0 {
-			secret := secrets.Items[0]
-			if u := string(secret.Data["user"]); u != "" && username == "" {
-				username = u
-			}
-			if p := string(secret.Data["password"]); p != "" && password == "" {
-				password = p
-			}
-		}
+	secret, ok := rc.SecretCache.GetByLabel(
+		"babylon.gpte.redhat.com/ansible-control-plane", hostname)
+	if !ok {
+		return "", "", fmt.Errorf("no k8s secret found for controller %s", hostname)
 	}
 
+	username := string(secret.Data["user"])
+	password := string(secret.Data["password"])
 	if username == "" || password == "" {
-		return "", "", fmt.Errorf("no credentials found (checked controller entry, babylon_tower varSecret, k8s secret)")
+		return "", "", fmt.Errorf("k8s secret for %s missing user or password", hostname)
 	}
 	return username, password, nil
 }

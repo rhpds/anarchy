@@ -14,6 +14,9 @@
 .odo/env
 .odo/odo-file-index.json
 
+# virtualenv
+.venv
+
 # editor and IDE paraphernalia
 .idea
 *.swp
@@ -34,4 +37,4 @@ commune-operator/config/crd/bases/kopfpeerings.crd.yaml
 
 # Babylon Runner
 babylon-runner/bin
-#babylon-runner/
+babylon-runner/babylon-runner
