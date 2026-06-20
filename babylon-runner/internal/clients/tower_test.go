@@ -843,6 +843,78 @@ func TestTowerLaunchJobSCMSettings(t *testing.T) {
 	}
 }
 
+func TestTowerLaunchJobRetryOnTemplateFail(t *testing.T) {
+	templateCreateAttempts := 0
+	var projectUpdated bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/tokens/":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"token": "tok", "id": float64(1),
+			})
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/v2/tokens/"):
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.RawQuery != "":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"count": 0, "results": []interface{}{},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/organizations/":
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(1)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/inventories/":
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(2)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/projects/":
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(3)})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/job_templates/":
+			templateCreateAttempts++
+			if templateCreateAttempts == 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprint(w, `{"detail":"project sync pending"}`)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(4)})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/update/"):
+			projectUpdated = true
+			w.WriteHeader(http.StatusAccepted)
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/job_templates/4/"):
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"results": []interface{}{},
+			})
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/launch/"):
+			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(777)})
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	tc := NewTowerClient("unused", "admin", "secret", nil)
+	tc.baseURL = server.URL
+
+	jobID, err := tc.LaunchJob(context.Background(), TowerJobConfig{
+		Organization:  "test-org",
+		Inventory:     "test-inv",
+		ProjectSCMURL: "https://git.example.com/repo.git",
+		ProjectSCMRef: "main",
+		TemplateName:  "test-template",
+		Playbook:      "playbook.yml",
+	})
+	if err != nil {
+		t.Fatalf("LaunchJob failed: %v", err)
+	}
+	if jobID != 777 {
+		t.Errorf("jobID = %d, want 777", jobID)
+	}
+	if templateCreateAttempts < 2 {
+		t.Errorf("templateCreateAttempts = %d, want >= 2", templateCreateAttempts)
+	}
+	if !projectUpdated {
+		t.Error("expected project update to be triggered on retry")
+	}
+}
+
 func TestGetJobCount(t *testing.T) {
 	tests := []struct {
 		name string

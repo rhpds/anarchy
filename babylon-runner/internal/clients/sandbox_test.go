@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestSandboxAPILoginViaTokenCache(t *testing.T) {
@@ -382,6 +383,51 @@ func TestSandboxAPIReleasePlacementError(t *testing.T) {
 	err := client.ReleasePlacement(context.Background(), "uuid-123")
 	if err == nil {
 		t.Fatal("expected error for 500, got nil")
+	}
+}
+
+func TestSandboxAPIClientRetry(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/login" && r.Method == "POST":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{
+				"access_token": "test-token",
+			})
+		case r.URL.Path == "/api/v1/placements/test-uuid/start" && r.Method == "PUT":
+			attempts++
+			if attempts < 3 {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"uuid":   "test-uuid",
+				"status": "starting",
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := NewSandboxAPIClient(server.URL, "login-token",
+		func(c *SandboxAPIClient) {
+			c.retryDelays = []time.Duration{1 * time.Millisecond, 1 * time.Millisecond, 1 * time.Millisecond}
+			c.loginRetryDelays = nil
+		},
+	)
+
+	result, err := client.StartPlacement(context.Background(), "test-uuid")
+	if err != nil {
+		t.Fatalf("StartPlacement failed: %v", err)
+	}
+	if result["status"] != "starting" {
+		t.Errorf("status = %v, want starting", result["status"])
+	}
+	if attempts != 3 {
+		t.Errorf("attempts = %d, want 3", attempts)
 	}
 }
 

@@ -3,13 +3,25 @@ package metrics
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"testing"
 	"time"
 )
 
+func freePort(t *testing.T) int {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("find free port: %v", err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+	return port
+}
+
 func TestServerHealthz(t *testing.T) {
-	port := 19093
+	port := freePort(t)
 	s := NewServer(port, func() bool { return true })
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -28,7 +40,7 @@ func TestServerHealthz(t *testing.T) {
 }
 
 func TestServerReadyzReady(t *testing.T) {
-	port := 19094
+	port := freePort(t)
 	s := NewServer(port, func() bool { return true })
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -47,7 +59,7 @@ func TestServerReadyzReady(t *testing.T) {
 }
 
 func TestServerReadyzNotReady(t *testing.T) {
-	port := 19095
+	port := freePort(t)
 	s := NewServer(port, func() bool { return false })
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -66,7 +78,7 @@ func TestServerReadyzNotReady(t *testing.T) {
 }
 
 func TestServerMetrics(t *testing.T) {
-	port := 19096
+	port := freePort(t)
 	s := NewServer(port, func() bool { return true })
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -85,7 +97,7 @@ func TestServerMetrics(t *testing.T) {
 }
 
 func TestServerShutdown(t *testing.T) {
-	port := 19097
+	port := freePort(t)
 	s := NewServer(port, func() bool { return true })
 	ctx, cancel := context.WithCancel(context.Background())
 
