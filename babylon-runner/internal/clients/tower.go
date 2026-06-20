@@ -754,10 +754,23 @@ func NewTowerClientPool() *TowerClientPool {
 }
 
 // Get returns an existing client for the hostname, or creates one.
+// If the cached client has different credentials, it is replaced.
 func (p *TowerClientPool) Get(hostname, username, password string, tlsConfig *tls.Config) *TowerClient {
 	p.mu.RLock()
 	if c, ok := p.clients[hostname]; ok {
+		if c.username == username && c.password == password {
+			p.mu.RUnlock()
+			return c
+		}
 		p.mu.RUnlock()
+		slog.Info("TowerClientPool: credentials changed, replacing client", "hostname", hostname)
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if old, ok := p.clients[hostname]; ok {
+			old.Close(context.Background())
+		}
+		c := NewTowerClient(hostname, username, password, tlsConfig)
+		p.clients[hostname] = c
 		return c
 	}
 	p.mu.RUnlock()
@@ -765,7 +778,10 @@ func (p *TowerClientPool) Get(hostname, username, password string, tlsConfig *tl
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if c, ok := p.clients[hostname]; ok {
-		return c
+		if c.username == username && c.password == password {
+			return c
+		}
+		c.Close(context.Background())
 	}
 	c := NewTowerClient(hostname, username, password, tlsConfig)
 	p.clients[hostname] = c
