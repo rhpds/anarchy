@@ -402,12 +402,46 @@ func (tc *TowerClient) UpdateProject(oauthToken string, projID int) error {
 	return nil
 }
 
-// AssociateChild POSTs to a sub-resource endpoint to create an association.
-// Used for job template credentials and instance groups.
-func (tc *TowerClient) AssociateChild(oauthToken string, parentPath string, parentID int, childEndpoint string, childID int) error {
+// listChildIDs returns the IDs of all resources currently associated with
+// a parent via a sub-resource endpoint (e.g., job_templates/5/credentials/).
+func (tc *TowerClient) listChildIDs(oauthToken, parentPath string, parentID int, childEndpoint string) ([]int, error) {
 	reqURL := fmt.Sprintf("%s%s%d/%s/", tc.baseURL, parentPath, parentID, childEndpoint)
 
-	body, err := json.Marshal(map[string]interface{}{"id": float64(childID)})
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+oauthToken)
+
+	resp, err := tc.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("GET %s: %w", reqURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("GET %s: status %d", reqURL, resp.StatusCode)
+	}
+
+	var result struct {
+		Results []struct {
+			ID float64 `json:"id"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	ids := make([]int, len(result.Results))
+	for i, r := range result.Results {
+		ids[i] = int(r.ID)
+	}
+	return ids, nil
+}
+
+// postChild sends an associate or disassociate request to a sub-resource endpoint.
+func (tc *TowerClient) postChild(oauthToken, reqURL string, payload map[string]interface{}) error {
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal body: %w", err)
 	}
@@ -429,6 +463,50 @@ func (tc *TowerClient) AssociateChild(oauthToken string, parentPath string, pare
 		respBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("POST %s: status %d: %s", reqURL, resp.StatusCode, string(respBody))
 	}
+	return nil
+}
+
+// SyncChildren synchronizes a parent's sub-resource associations to match
+// desiredIDs exactly. It GETs the current associations, calculates the diff,
+// disassociates extras, and associates missing ones. This is idempotent —
+// matching the pattern used by the awx.awx Ansible collection.
+func (tc *TowerClient) SyncChildren(oauthToken, parentPath string, parentID int, childEndpoint string, desiredIDs []int) error {
+	existing, err := tc.listChildIDs(oauthToken, parentPath, parentID, childEndpoint)
+	if err != nil {
+		return fmt.Errorf("list existing %s: %w", childEndpoint, err)
+	}
+
+	existingSet := make(map[int]bool, len(existing))
+	for _, id := range existing {
+		existingSet[id] = true
+	}
+	desiredSet := make(map[int]bool, len(desiredIDs))
+	for _, id := range desiredIDs {
+		desiredSet[id] = true
+	}
+
+	reqURL := fmt.Sprintf("%s%s%d/%s/", tc.baseURL, parentPath, parentID, childEndpoint)
+
+	for id := range existingSet {
+		if !desiredSet[id] {
+			if err := tc.postChild(oauthToken, reqURL, map[string]interface{}{
+				"id": float64(id), "disassociate": true,
+			}); err != nil {
+				return fmt.Errorf("disassociate %s %d: %w", childEndpoint, id, err)
+			}
+		}
+	}
+
+	for id := range desiredSet {
+		if !existingSet[id] {
+			if err := tc.postChild(oauthToken, reqURL, map[string]interface{}{
+				"id": float64(id), "associate": true,
+			}); err != nil {
+				return fmt.Errorf("associate %s %d: %w", childEndpoint, id, err)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -580,22 +658,22 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 		}
 	}
 
-	// Step 8: Associate credentials with the template.
-	for _, credID := range credIDs {
-		if err := tc.AssociateChild(token, "/api/v2/job_templates/", tmplID, "credentials", credID); err != nil {
-			return 0, fmt.Errorf("associate credential %d: %w", credID, err)
-		}
+	// Step 8: Sync credentials with the template (idempotent diff-based).
+	if err := tc.SyncChildren(token, "/api/v2/job_templates/", tmplID, "credentials", credIDs); err != nil {
+		return 0, fmt.Errorf("sync credentials: %w", err)
 	}
 
-	// Associate instance groups with the template.
+	// Sync instance groups with the template.
+	var igIDs []int
 	for _, igName := range config.InstanceGroups {
 		igID, err := tc.SearchResource(token, "/api/v2/instance_groups/", igName)
 		if err != nil || igID == 0 {
 			continue
 		}
-		if err := tc.AssociateChild(token, "/api/v2/job_templates/", tmplID, "instance_groups", igID); err != nil {
-			return 0, fmt.Errorf("associate instance group %q: %w", igName, err)
-		}
+		igIDs = append(igIDs, igID)
+	}
+	if err := tc.SyncChildren(token, "/api/v2/job_templates/", tmplID, "instance_groups", igIDs); err != nil {
+		return 0, fmt.Errorf("sync instance groups: %w", err)
 	}
 
 	// Step 9: Launch the job template (with retry via project update).

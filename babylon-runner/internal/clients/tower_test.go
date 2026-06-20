@@ -350,6 +350,12 @@ func TestTowerLaunchJob(t *testing.T) {
 			}
 			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(4)})
 
+		// SyncChildren GET: no existing associations.
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/job_templates/4/"):
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"results": []interface{}{},
+			})
+
 		// Launch job template
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/job_templates/4/launch/":
 			wantAuth := "Bearer oauth-tok"
@@ -552,6 +558,16 @@ func TestTowerLaunchJobWithEEAndCredentials(t *testing.T) {
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/v2/tokens/"):
 			w.WriteHeader(http.StatusNoContent)
 
+		// GET list of children for SyncChildren (no existing associations).
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/job_templates/5/credentials/"):
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"results": []interface{}{},
+			})
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/job_templates/5/instance_groups/"):
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"results": []interface{}{},
+			})
+
 		// Search requests -> return not found (except credentials).
 		case r.Method == http.MethodGet && r.URL.RawQuery != "":
 			// Return found result for static credential search.
@@ -590,7 +606,7 @@ func TestTowerLaunchJobWithEEAndCredentials(t *testing.T) {
 			json.NewDecoder(r.Body).Decode(&templateData)
 			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(5)})
 
-		// Credential association.
+		// Credential association (SyncChildren posts with associate: true).
 		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/credentials/"):
 			associatedCreds++
 			w.WriteHeader(http.StatusNoContent)
@@ -672,6 +688,86 @@ func TestTowerLaunchJobWithEEAndCredentials(t *testing.T) {
 	}
 }
 
+func TestSyncChildrenIdempotent(t *testing.T) {
+	var associated, disassociated []int
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.Method {
+		case http.MethodGet:
+			// Template already has credentials 10 and 20.
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"results": []interface{}{
+					map[string]interface{}{"id": float64(10)},
+					map[string]interface{}{"id": float64(20)},
+				},
+			})
+		case http.MethodPost:
+			var body map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			id := int(body["id"].(float64))
+			if body["disassociate"] == true {
+				disassociated = append(disassociated, id)
+			} else {
+				associated = append(associated, id)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	defer server.Close()
+
+	tc := NewTowerClient("unused", "admin", "secret", nil)
+	tc.baseURL = server.URL
+
+	// Desired: keep 10, drop 20, add 30.
+	err := tc.SyncChildren("tok", "/api/v2/job_templates/", 5, "credentials", []int{10, 30})
+	if err != nil {
+		t.Fatalf("SyncChildren error: %v", err)
+	}
+
+	if len(disassociated) != 1 || disassociated[0] != 20 {
+		t.Errorf("disassociated = %v, want [20]", disassociated)
+	}
+	if len(associated) != 1 || associated[0] != 30 {
+		t.Errorf("associated = %v, want [30]", associated)
+	}
+}
+
+func TestSyncChildrenNoChanges(t *testing.T) {
+	var postCount int
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.Method {
+		case http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"results": []interface{}{
+					map[string]interface{}{"id": float64(10)},
+					map[string]interface{}{"id": float64(20)},
+				},
+			})
+		case http.MethodPost:
+			postCount++
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	defer server.Close()
+
+	tc := NewTowerClient("unused", "admin", "secret", nil)
+	tc.baseURL = server.URL
+
+	// Desired matches existing — no POSTs should happen.
+	err := tc.SyncChildren("tok", "/api/v2/job_templates/", 5, "credentials", []int{10, 20})
+	if err != nil {
+		t.Fatalf("SyncChildren error: %v", err)
+	}
+	if postCount != 0 {
+		t.Errorf("postCount = %d, want 0 (no changes needed)", postCount)
+	}
+}
+
 func TestTowerLaunchJobSCMSettings(t *testing.T) {
 	// Verify SCM settings are passed to the project creation.
 	var projData map[string]interface{}
@@ -699,6 +795,10 @@ func TestTowerLaunchJobSCMSettings(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(3)})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/job_templates/":
 			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(4)})
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/job_templates/4/"):
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"results": []interface{}{},
+			})
 		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/launch/"):
 			json.NewEncoder(w).Encode(map[string]interface{}{"id": float64(100)})
 		default:
