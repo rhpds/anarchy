@@ -242,6 +242,57 @@ func TestGetTowerClientForAction(t *testing.T) {
 		// Old tests "controllers list with non-map values" and "all controllers
 		// are non-map" are not applicable: AnsibleControllers is typed as
 		// []map[string]interface{}, so non-map values cannot be stored in the slice.
+
+		{
+			name: "scheduler configured but unreachable - falls back to local selection",
+			setup: func(rc *runner.RunContext) {
+				rc.Payload.Governor.Spec.Vars.Meta = &types.Meta{
+					AnsibleControllers: []map[string]interface{}{
+						{"hostname": "tower1.example.com"},
+					},
+					ControllerScheduler: &types.ControllerSchedulerMeta{
+						URL: "http://127.0.0.1:1", // unreachable
+					},
+				}
+				rc.Payload.Governor.Spec.Vars.Extra = map[string]interface{}{
+					"controller_scheduler_credentials": map[string]interface{}{
+						"cluster_scheduler_api_key_governor": "test-key",
+					},
+				}
+				rc.SecretCache = newTestSecretCache("tower1.example.com", "admin", "secret")
+			},
+			wantHost: "tower1.example.com",
+			wantErr:  false,
+		},
+		{
+			name: "scheduler configured but no API key - falls back to local selection",
+			setup: func(rc *runner.RunContext) {
+				rc.Payload.Governor.Spec.Vars.Meta = &types.Meta{
+					AnsibleControllers: []map[string]interface{}{
+						{"hostname": "tower1.example.com"},
+					},
+					ControllerScheduler: &types.ControllerSchedulerMeta{
+						URL: "http://scheduler.example.com",
+					},
+				}
+				rc.SecretCache = newTestSecretCache("tower1.example.com", "admin", "secret")
+			},
+			wantHost: "tower1.example.com",
+			wantErr:  false,
+		},
+		{
+			name: "scheduler not configured - uses local selection directly",
+			setup: func(rc *runner.RunContext) {
+				rc.Payload.Governor.Spec.Vars.Meta = &types.Meta{
+					AnsibleControllers: []map[string]interface{}{
+						{"hostname": "tower1.example.com"},
+					},
+				}
+				rc.SecretCache = newTestSecretCache("tower1.example.com", "admin", "secret")
+			},
+			wantHost: "tower1.example.com",
+			wantErr:  false,
+		},
 	}
 
 	for _, tt := range tests {

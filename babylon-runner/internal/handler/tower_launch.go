@@ -53,6 +53,16 @@ func getTowerClientForAction(rc *runner.RunContext) (*clients.TowerClient, strin
 		return nil, "", fmt.Errorf("no __meta__ in governor")
 	}
 
+	if meta.ControllerScheduler != nil && meta.ControllerScheduler.URL != "" {
+		selected, hostname, err := trySchedulerSelection(rc, meta)
+		if err != nil {
+			slog.Warn("controller-scheduler failed, falling back to local selection",
+				"error", err)
+		} else {
+			return selected, hostname, nil
+		}
+	}
+
 	controllers := meta.AnsibleControllers
 	if len(controllers) == 0 {
 		return nil, "", fmt.Errorf("no ansible_controllers in __meta__")
@@ -78,6 +88,62 @@ func getTowerClientForAction(rc *runner.RunContext) (*clients.TowerClient, strin
 	}
 
 	return rc.TowerClientPool.Get(hostname, username, password, rc.TowerTLSConfig), hostname, nil
+}
+
+func trySchedulerSelection(rc *runner.RunContext, meta *types.Meta) (*clients.TowerClient, string, error) {
+	cs := meta.ControllerScheduler
+
+	apiKey, err := resolveSchedulerAPIKey(rc)
+	if err != nil {
+		return nil, "", fmt.Errorf("scheduler API key: %w", err)
+	}
+
+	var candidates []clients.Candidate
+	for _, c := range meta.AnsibleControllers {
+		if h, ok := c["hostname"].(string); ok && h != "" {
+			candidates = append(candidates, clients.Candidate{Domain: h})
+		}
+	}
+
+	scheduler := clients.NewSchedulerClient(cs.URL, apiKey, rc.TowerTLSConfig)
+	resp, err := scheduler.Evaluate(rc.Ctx, clients.EvaluateRequest{
+		Candidates:    candidates,
+		RequireLabels: cs.RequireLabels,
+		PreferLabels:  cs.PreferLabels,
+		InstanceGroup: rc.ActionName(),
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	if len(resp.Ranked) == 0 {
+		return nil, "", fmt.Errorf("scheduler returned empty ranking")
+	}
+
+	selectedHost := resp.Ranked[0].Domain
+	slog.Info("controller-scheduler selected",
+		"hostname", selectedHost,
+		"score", resp.Ranked[0].Score)
+
+	username, password, err := resolveControllerCreds(rc, map[string]interface{}{
+		"hostname": selectedHost,
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("credentials for scheduler-selected %s: %w", selectedHost, err)
+	}
+
+	return rc.TowerClientPool.Get(selectedHost, username, password, rc.TowerTLSConfig), selectedHost, nil
+}
+
+func resolveSchedulerAPIKey(rc *runner.RunContext) (string, error) {
+	creds, _ := rc.Payload.Governor.Spec.Vars.Get("controller_scheduler_credentials").(map[string]interface{})
+	if creds == nil {
+		return "", fmt.Errorf("controller_scheduler_credentials not found in governor vars")
+	}
+	key, _ := creds["cluster_scheduler_api_key_governor"].(string)
+	if key == "" {
+		return "", fmt.Errorf("cluster_scheduler_api_key_governor is empty in controller_scheduler_credentials")
+	}
+	return key, nil
 }
 
 // resolveControllerCreds returns (username, password) for a controller by

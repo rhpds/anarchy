@@ -35,6 +35,12 @@ var (
 		Buckets: []float64{0.1, 0.5, 1, 5, 10, 30, 60},
 	}, []string{"operation"})
 
+	SchedulerAPIDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "babylon_runner_scheduler_api_duration_seconds",
+		Help:    "Duration of Scheduler API operations",
+		Buckets: []float64{0.1, 0.5, 1, 5, 10, 30},
+	}, []string{"operation"})
+
 	ActiveRun = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "babylon_runner_active_run",
 		Help: "1 if currently processing a run, 0 if idle",

@@ -1,6 +1,8 @@
 package types
 
 import (
+	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -213,5 +215,82 @@ func TestFirstString(t *testing.T) {
 	}
 	if got := FirstString("first", "second"); got != "first" {
 		t.Errorf("got %q, want %q", got, "first")
+	}
+}
+
+func TestStringOrSlice(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    StringOrSlice
+		wantErr bool
+	}{
+		{
+			name:  "single string",
+			input: `"prod"`,
+			want:  StringOrSlice{"prod"},
+		},
+		{
+			name:  "string slice",
+			input: `["us-east","us-west"]`,
+			want:  StringOrSlice{"us-east", "us-west"},
+		},
+		{
+			name:  "single element slice",
+			input: `["prod"]`,
+			want:  StringOrSlice{"prod"},
+		},
+		{
+			name:  "empty slice",
+			input: `[]`,
+			want:  StringOrSlice{},
+		},
+		{
+			name:    "invalid type",
+			input:   `123`,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got StringOrSlice
+			err := json.Unmarshal([]byte(tt.input), &got)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStringOrSliceInMap(t *testing.T) {
+	input := `{"env":"prod","region":["us-east","us-west"]}`
+	var labels map[string]StringOrSlice
+	if err := json.Unmarshal([]byte(input), &labels); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !reflect.DeepEqual(labels["env"], StringOrSlice{"prod"}) {
+		t.Errorf("env = %v, want [prod]", labels["env"])
+	}
+	if !reflect.DeepEqual(labels["region"], StringOrSlice{"us-east", "us-west"}) {
+		t.Errorf("region = %v, want [us-east us-west]", labels["region"])
+	}
+
+	out, err := json.Marshal(labels)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	expected := `{"env":["prod"],"region":["us-east","us-west"]}`
+	if string(out) != expected {
+		t.Errorf("marshal = %s, want %s", out, expected)
 	}
 }

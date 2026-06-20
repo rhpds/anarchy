@@ -211,10 +211,10 @@ type TowerMeta struct {
 
 // ControllerSchedulerMeta configures external controller selection.
 type ControllerSchedulerMeta struct {
-	URL           string            `json:"url,omitempty"`
-	RequireLabels map[string]string `json:"require_labels,omitempty"`
-	PreferLabels  map[string]string `json:"prefer_labels,omitempty"`
-	InstanceGroup string            `json:"instance_group,omitempty"`
+	URL           string                     `json:"url,omitempty"`
+	RequireLabels map[string]StringOrSlice   `json:"require_labels,omitempty"`
+	PreferLabels  map[string]StringOrSlice   `json:"prefer_labels,omitempty"`
+	InstanceGroup string                     `json:"instance_group,omitempty"`
 }
 
 // Subject represents the AnarchySubject attached to a run.

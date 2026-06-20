@@ -1,6 +1,7 @@
 package types
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -187,6 +188,24 @@ func DeepCopySlice(src []interface{}) []interface{} {
 		}
 	}
 	return dst
+}
+
+// StringOrSlice holds label values that may arrive as a single string
+// or a list of strings in JSON/YAML. It always normalises to []string.
+type StringOrSlice []string
+
+func (s *StringOrSlice) UnmarshalJSON(data []byte) error {
+	var single string
+	if err := json.Unmarshal(data, &single); err == nil {
+		*s = []string{single}
+		return nil
+	}
+	var slice []string
+	if err := json.Unmarshal(data, &slice); err != nil {
+		return err
+	}
+	*s = slice
+	return nil
 }
 
 // FormatTimestamp returns a formatted timestamp string.
