@@ -3,6 +3,7 @@ package secrets
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -29,6 +30,24 @@ func NewCache(clientset kubernetes.Interface, namespace string) *Cache {
 }
 
 func (c *Cache) Start(ctx context.Context) error {
+	c.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			if s, ok := obj.(*corev1.Secret); ok {
+				slog.Info("secret cache: added", "name", s.Name, "namespace", s.Namespace)
+			}
+		},
+		UpdateFunc: func(_, newObj interface{}) {
+			if s, ok := newObj.(*corev1.Secret); ok {
+				slog.Info("secret cache: updated", "name", s.Name, "namespace", s.Namespace)
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			if s, ok := obj.(*corev1.Secret); ok {
+				slog.Info("secret cache: deleted", "name", s.Name, "namespace", s.Namespace)
+			}
+		},
+	})
+
 	go c.informer.Run(c.stopCh)
 
 	deadline, hasDeadline := ctx.Deadline()
@@ -54,6 +73,8 @@ func (c *Cache) Start(ctx context.Context) error {
 	) {
 		return fmt.Errorf("secret informer cache sync timed out")
 	}
+
+	slog.Info("secret cache: synced", "secrets", len(c.informer.GetStore().List()))
 	return nil
 }
 
