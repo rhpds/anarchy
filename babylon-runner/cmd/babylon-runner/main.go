@@ -36,7 +36,7 @@ func main() {
 
 	clientset, err := buildClientset()
 	if err != nil {
-		slog.Warn("kubernetes client not available", "error", err)
+		slog.Warn("kubernetes client not available, secret cache and scheduler disabled", "error", err)
 	}
 
 	r := runner.New(cfg, clientset, towerTLSConfig)
@@ -55,7 +55,7 @@ func main() {
 
 	metricsServer := metrics.NewServer(cfg.MetricsPort, r.IsReady)
 	go func() {
-		if err := metricsServer.Start(context.Background()); err != nil {
+		if err := metricsServer.Start(ctx); err != nil && ctx.Err() == nil {
 			slog.Error("metrics server failed", "error", err)
 		}
 	}()
