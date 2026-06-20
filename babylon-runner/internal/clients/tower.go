@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"log/slog"
+
 	"github.com/rhpds/anarchy/babylon-runner/internal/httputil"
 	"github.com/rhpds/anarchy/babylon-runner/internal/metrics"
 )
@@ -402,7 +404,7 @@ func (tc *TowerClient) EnsureResource(oauthToken, path string, data map[string]i
 	if name != "" {
 		id, err := tc.SearchResource(oauthToken, path, name)
 		if err != nil {
-			// Search failed; fall through to create.
+			slog.Warn("EnsureResource: search failed, falling through to create", "path", path, "name", name, "error", err)
 		} else if id > 0 {
 			return id, nil
 		}
@@ -585,7 +587,11 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 	if len(config.VaultCredentials) > 0 {
 		// Find the "Vault" credential type ID.
 		vaultTypeID, err := tc.SearchResource(token, "/api/v2/credential_types/", "Vault")
-		if err == nil && vaultTypeID > 0 {
+		if err != nil {
+			slog.Warn("LaunchJob: failed to find Vault credential type, skipping vault credentials", "error", err)
+		} else if vaultTypeID == 0 {
+			slog.Warn("LaunchJob: Vault credential type not found, skipping vault credentials")
+		} else {
 			for vaultID, vaultPassword := range config.VaultCredentials {
 				credName := config.Organization + " " + vaultID
 				credID, err := tc.EnsureResource(token, "/api/v2/credentials/", map[string]interface{}{
@@ -700,7 +706,12 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 	var igIDs []int
 	for _, igName := range config.InstanceGroups {
 		igID, err := tc.SearchResource(token, "/api/v2/instance_groups/", igName)
-		if err != nil || igID == 0 {
+		if err != nil {
+			slog.Warn("LaunchJob: instance group lookup failed, skipping", "name", igName, "error", err)
+			continue
+		}
+		if igID == 0 {
+			slog.Warn("LaunchJob: instance group not found, skipping", "name", igName)
 			continue
 		}
 		igIDs = append(igIDs, igID)
