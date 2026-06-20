@@ -653,7 +653,10 @@ func (tc *TowerClient) LaunchJob(ctx context.Context, config TowerJobConfig) (in
 		// the credential name (must be pre-created on Tower).
 		if config.ExecutionEnvironment.Private {
 			registry := strings.SplitN(config.ExecutionEnvironment.Image, "/", 2)[0]
-			regCredID, _ := tc.SearchResource(ctx, token, "/api/v2/credentials/", registry)
+			regCredID, err := tc.SearchResource(ctx, token, "/api/v2/credentials/", registry)
+			if err != nil {
+				slog.Warn("LaunchJob: registry credential lookup failed for private EE", "registry", registry, "error", err)
+			}
 			if regCredID > 0 {
 				eeData["credential"] = float64(regCredID)
 			}
@@ -767,6 +770,9 @@ func (p *TowerClientPool) Get(hostname, username, password string, tlsConfig *tl
 		p.mu.Lock()
 		defer p.mu.Unlock()
 		if old, ok := p.clients[hostname]; ok {
+			if old.username == username && old.password == password {
+				return old
+			}
 			old.Close(context.Background())
 		}
 		c := NewTowerClient(hostname, username, password, tlsConfig)
