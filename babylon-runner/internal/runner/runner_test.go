@@ -1253,6 +1253,106 @@ func TestPollOnceRecoversPanic(t *testing.T) {
 	}
 }
 
+// --- Consecutive error / readiness tests ---
+
+func TestConsecutiveErrorsSetsNotReady(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	cfg := Config{
+		AnarchyURL:      server.URL,
+		RunnerName:      "r",
+		PodName:         "p",
+		RunnerToken:     "t",
+		PollingInterval: 5 * time.Second,
+		RequestTimeout:  5 * time.Second,
+		MaxPollFailures: 3,
+	}
+	r := New(cfg, nil, nil)
+	r.postRetryDelay = 0
+	r.ready.Store(true)
+
+	for i := 0; i < 3; i++ {
+		r.pollOnce(context.Background())
+	}
+
+	if r.IsReady() {
+		t.Error("expected runner to be not ready after 3 consecutive errors")
+	}
+	if r.consecutiveErrors.Load() != 3 {
+		t.Errorf("consecutiveErrors = %d, want 3", r.consecutiveErrors.Load())
+	}
+}
+
+func TestConsecutiveErrorsResetOnSuccess(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount <= 2 {
+			w.WriteHeader(http.StatusForbidden)
+		} else {
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	defer server.Close()
+
+	cfg := Config{
+		AnarchyURL:      server.URL,
+		RunnerName:      "r",
+		PodName:         "p",
+		RunnerToken:     "t",
+		PollingInterval: 5 * time.Second,
+		RequestTimeout:  5 * time.Second,
+		MaxPollFailures: 5,
+	}
+	r := New(cfg, nil, nil)
+	r.postRetryDelay = 0
+
+	r.pollOnce(context.Background())
+	r.pollOnce(context.Background())
+	if r.consecutiveErrors.Load() != 2 {
+		t.Fatalf("consecutiveErrors = %d, want 2", r.consecutiveErrors.Load())
+	}
+
+	r.pollOnce(context.Background())
+	if r.consecutiveErrors.Load() != 0 {
+		t.Errorf("consecutiveErrors = %d, want 0 after success", r.consecutiveErrors.Load())
+	}
+	if !r.IsReady() {
+		t.Error("expected runner to be ready after successful poll")
+	}
+}
+
+func TestBelowThresholdStaysReady(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	cfg := Config{
+		AnarchyURL:      server.URL,
+		RunnerName:      "r",
+		PodName:         "p",
+		RunnerToken:     "t",
+		PollingInterval: 5 * time.Second,
+		RequestTimeout:  5 * time.Second,
+		MaxPollFailures: 5,
+	}
+	r := New(cfg, nil, nil)
+	r.postRetryDelay = 0
+	r.ready.Store(true)
+
+	for i := 0; i < 4; i++ {
+		r.pollOnce(context.Background())
+	}
+
+	if !r.IsReady() {
+		t.Error("expected runner to stay ready when below threshold (4 < 5)")
+	}
+}
+
 // --- helper ---
 
 func newTestRunner(serverURL string) *Runner {

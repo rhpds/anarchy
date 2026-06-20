@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -33,6 +34,8 @@ type Runner struct {
 	handlers       map[string]HandlerFunc
 	postRetryDelay time.Duration // base delay between POST retries; 0 in tests
 	towerTLSConfig *tls.Config
+	ready             atomic.Bool
+	consecutiveErrors atomic.Int32
 }
 
 // New creates a Runner with an HTTP client and AnarchyClient.
@@ -57,6 +60,9 @@ func New(cfg Config, clientset kubernetes.Interface, towerTLSConfig *tls.Config)
 func (r *Runner) SetHandlers(handlers map[string]HandlerFunc) {
 	r.handlers = handlers
 }
+
+// IsReady reports whether the runner has successfully contacted the Anarchy API.
+func (r *Runner) IsReady() bool { return r.ready.Load() }
 
 // Run starts the polling loop. It stops on SIGTERM or SIGINT.
 func (r *Runner) Run() {
@@ -88,9 +94,16 @@ func (r *Runner) Run() {
 func (r *Runner) pollOnce(ctx context.Context) error {
 	payload, err := r.getRun(ctx)
 	if err != nil {
-		slog.Error("poll failed", "error", err)
+		count := r.consecutiveErrors.Add(1)
+		slog.Error("poll failed", "error", err, "consecutiveErrors", count)
+		if count >= int32(r.config.MaxPollFailures) {
+			r.ready.Store(false)
+			slog.Warn("readiness lost due to consecutive poll failures",
+				"count", count, "threshold", r.config.MaxPollFailures)
+		}
 		return err
 	}
+	r.consecutiveErrors.Store(0)
 	if payload == nil {
 		return nil
 	}
@@ -165,6 +178,7 @@ func (r *Runner) getRun(ctx context.Context) (*types.RunPayload, error) {
 
 	switch resp.StatusCode {
 	case http.StatusOK:
+		r.ready.Store(true)
 		var payload types.RunPayload
 		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 			return nil, fmt.Errorf("decode run payload: %w", err)
@@ -174,6 +188,7 @@ func (r *Runner) getRun(ctx context.Context) (*types.RunPayload, error) {
 		}
 		return &payload, nil
 	case http.StatusNoContent, http.StatusRequestTimeout:
+		r.ready.Store(true)
 		return nil, nil
 	case http.StatusForbidden:
 		return nil, fmt.Errorf("authentication failed (403)")

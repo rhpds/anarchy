@@ -240,6 +240,52 @@ func TestConfigTowerTLS(t *testing.T) {
 	})
 }
 
+func TestConfigFromEnv_MetricsPort(t *testing.T) {
+	setRequiredEnvs(t)
+	t.Setenv("METRICS_PORT", "9999")
+	cfg, err := ConfigFromEnv()
+	if err != nil {
+		t.Fatalf("ConfigFromEnv: %v", err)
+	}
+	if cfg.MetricsPort != 9999 {
+		t.Errorf("MetricsPort = %d, want 9999", cfg.MetricsPort)
+	}
+}
+
+func TestConfigFromEnv_MetricsPortDefault(t *testing.T) {
+	setRequiredEnvs(t)
+	cfg, err := ConfigFromEnv()
+	if err != nil {
+		t.Fatalf("ConfigFromEnv: %v", err)
+	}
+	if cfg.MetricsPort != 9093 {
+		t.Errorf("MetricsPort = %d, want 9093", cfg.MetricsPort)
+	}
+}
+
+func TestConfigFromEnv_MaxPollFailures(t *testing.T) {
+	setRequiredEnvs(t)
+	t.Setenv("MAX_POLL_FAILURES", "5")
+	cfg, err := ConfigFromEnv()
+	if err != nil {
+		t.Fatalf("ConfigFromEnv: %v", err)
+	}
+	if cfg.MaxPollFailures != 5 {
+		t.Errorf("MaxPollFailures = %d, want 5", cfg.MaxPollFailures)
+	}
+}
+
+func TestConfigFromEnv_MaxPollFailuresDefault(t *testing.T) {
+	setRequiredEnvs(t)
+	cfg, err := ConfigFromEnv()
+	if err != nil {
+		t.Fatalf("ConfigFromEnv: %v", err)
+	}
+	if cfg.MaxPollFailures != 10 {
+		t.Errorf("MaxPollFailures = %d, want 10", cfg.MaxPollFailures)
+	}
+}
+
 func TestConfigActionRetryIntervals(t *testing.T) {
 	setRequiredEnvs(t)
 

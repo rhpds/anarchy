@@ -29,6 +29,8 @@ type Config struct {
 	TowerTLSVerify       bool
 	TowerCACert          string
 	ActionRetryIntervals []string
+	MetricsPort          int
+	MaxPollFailures      int
 }
 
 // AuthHeader returns the Bearer token for Anarchy API requests.
@@ -65,6 +67,8 @@ func ConfigFromEnv() (Config, error) {
 	cfg.TowerTLSVerify = envBool("TOWER_TLS_VERIFY", true)
 	cfg.TowerCACert = os.Getenv("TOWER_CA_CERT")
 	cfg.ActionRetryIntervals = envStringSlice("ACTION_RETRY_INTERVALS", DefaultActionRetryIntervals)
+	cfg.MetricsPort = envInt("METRICS_PORT", 9093)
+	cfg.MaxPollFailures = envInt("MAX_POLL_FAILURES", 10)
 	return cfg, nil
 }
 

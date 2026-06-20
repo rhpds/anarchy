@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"log"
 	"log/slog"
 	"os"
 
 	"github.com/rhpds/anarchy/babylon-runner/internal/handler"
 	"github.com/rhpds/anarchy/babylon-runner/internal/httputil"
+	"github.com/rhpds/anarchy/babylon-runner/internal/metrics"
 	"github.com/rhpds/anarchy/babylon-runner/internal/runner"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -33,6 +35,14 @@ func main() {
 
 	r := runner.New(cfg, clientset, towerTLSConfig)
 	r.SetHandlers(handler.Register())
+
+	metricsServer := metrics.NewServer(cfg.MetricsPort, r.IsReady)
+	go func() {
+		if err := metricsServer.Start(context.Background()); err != nil {
+			slog.Error("metrics server failed", "error", err)
+		}
+	}()
+
 	r.Run()
 }
 
