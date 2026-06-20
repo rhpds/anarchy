@@ -135,7 +135,7 @@ func NewTowerClient(hostname, username, password string, tlsConfig *tls.Config) 
 	}
 	tc.tokenCache = httputil.NewTokenCache(
 		func(ctx context.Context) (string, time.Duration, error) {
-			token, id, err := tc.CreateOAuthToken()
+			token, id, err := tc.CreateOAuthToken(ctx)
 			if err != nil {
 				return "", 0, err
 			}
@@ -144,7 +144,7 @@ func NewTowerClient(hostname, username, password string, tlsConfig *tls.Config) 
 		},
 		httputil.WithCleanup(func(ctx context.Context, token string) error {
 			if tc.tokenID > 0 {
-				return tc.DeleteOAuthToken(tc.tokenID)
+				return tc.DeleteOAuthToken(ctx, tc.tokenID)
 			}
 			return nil
 		}),
@@ -201,10 +201,10 @@ func GetJobCount(c map[string]interface{}) float64 {
 
 // CreateOAuthToken creates a personal access token via the Tower API
 // using Basic Auth credentials.
-func (tc *TowerClient) CreateOAuthToken() (token string, tokenID int, err error) {
+func (tc *TowerClient) CreateOAuthToken(ctx context.Context) (token string, tokenID int, err error) {
 	url := tc.baseURL + "/api/v2/tokens/"
 
-	req, err := http.NewRequest(http.MethodPost, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
 	if err != nil {
 		return "", 0, fmt.Errorf("create request: %w", err)
 	}
@@ -239,10 +239,10 @@ func (tc *TowerClient) CreateOAuthToken() (token string, tokenID int, err error)
 }
 
 // DeleteOAuthToken deletes a personal access token by ID using Basic Auth.
-func (tc *TowerClient) DeleteOAuthToken(tokenID int) error {
+func (tc *TowerClient) DeleteOAuthToken(ctx context.Context, tokenID int) error {
 	url := fmt.Sprintf("%s/api/v2/tokens/%d/", tc.baseURL, tokenID)
 
-	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
@@ -261,10 +261,10 @@ func (tc *TowerClient) DeleteOAuthToken(tokenID int) error {
 }
 
 // GetJobStatus fetches the status of a Tower job by its ID.
-func (tc *TowerClient) GetJobStatus(oauthToken string, jobID int) (map[string]interface{}, error) {
+func (tc *TowerClient) GetJobStatus(ctx context.Context, oauthToken string, jobID int) (map[string]interface{}, error) {
 	url := fmt.Sprintf("%s/api/v2/jobs/%d/", tc.baseURL, jobID)
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -293,10 +293,10 @@ func (tc *TowerClient) GetJobStatus(oauthToken string, jobID int) (map[string]in
 }
 
 // CancelJob sends a cancel request for a Tower job.
-func (tc *TowerClient) CancelJob(oauthToken string, jobID int) error {
+func (tc *TowerClient) CancelJob(ctx context.Context, oauthToken string, jobID int) error {
 	url := fmt.Sprintf("%s/api/v2/jobs/%d/cancel/", tc.baseURL, jobID)
 
-	req, err := http.NewRequest(http.MethodPost, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
@@ -320,11 +320,11 @@ func (tc *TowerClient) CancelJob(oauthToken string, jobID int) error {
 
 // SearchResource searches for a resource by name via the Tower API.
 // Returns the ID of the first match, or 0 if not found.
-func (tc *TowerClient) SearchResource(oauthToken, path, name string) (int, error) {
+func (tc *TowerClient) SearchResource(ctx context.Context, oauthToken, path, name string) (int, error) {
 	params := url.Values{"name": {name}}
 	reqURL := tc.baseURL + path + "?" + params.Encode()
 
-	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return 0, fmt.Errorf("create request: %w", err)
 	}
@@ -358,7 +358,7 @@ func (tc *TowerClient) SearchResource(oauthToken, path, name string) (int, error
 
 // CreateResource creates a Tower resource by POSTing to the given API path.
 // It returns the "id" field from the JSON response.
-func (tc *TowerClient) CreateResource(oauthToken, path string, data map[string]interface{}) (int, error) {
+func (tc *TowerClient) CreateResource(ctx context.Context, oauthToken, path string, data map[string]interface{}) (int, error) {
 	reqURL := tc.baseURL + path
 
 	body, err := json.Marshal(data)
@@ -366,7 +366,7 @@ func (tc *TowerClient) CreateResource(oauthToken, path string, data map[string]i
 		return 0, fmt.Errorf("marshal body: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, reqURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body))
 	if err != nil {
 		return 0, fmt.Errorf("create request: %w", err)
 	}
@@ -399,25 +399,25 @@ func (tc *TowerClient) CreateResource(oauthToken, path string, data map[string]i
 // EnsureResource finds a resource by name or creates it. Returns the ID.
 // This is idempotent: if the resource already exists, returns its ID
 // without modification (matching awx.awx module behavior).
-func (tc *TowerClient) EnsureResource(oauthToken, path string, data map[string]interface{}) (int, error) {
+func (tc *TowerClient) EnsureResource(ctx context.Context, oauthToken, path string, data map[string]interface{}) (int, error) {
 	name, _ := data["name"].(string)
 	if name != "" {
-		id, err := tc.SearchResource(oauthToken, path, name)
+		id, err := tc.SearchResource(ctx, oauthToken, path, name)
 		if err != nil {
 			slog.Warn("EnsureResource: search failed, falling through to create", "path", path, "name", name, "error", err)
 		} else if id > 0 {
 			return id, nil
 		}
 	}
-	return tc.CreateResource(oauthToken, path, data)
+	return tc.CreateResource(ctx, oauthToken, path, data)
 }
 
 // UpdateProject triggers a project SCM sync. This is used as a retry
 // mechanism when job template creation or launch fails.
-func (tc *TowerClient) UpdateProject(oauthToken string, projID int) error {
+func (tc *TowerClient) UpdateProject(ctx context.Context, oauthToken string, projID int) error {
 	reqURL := fmt.Sprintf("%s/api/v2/projects/%d/update/", tc.baseURL, projID)
 
-	req, err := http.NewRequest(http.MethodPost, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, nil)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
@@ -439,10 +439,10 @@ func (tc *TowerClient) UpdateProject(oauthToken string, projID int) error {
 
 // listChildIDs returns the IDs of all resources currently associated with
 // a parent via a sub-resource endpoint (e.g., job_templates/5/credentials/).
-func (tc *TowerClient) listChildIDs(oauthToken, parentPath string, parentID int, childEndpoint string) ([]int, error) {
+func (tc *TowerClient) listChildIDs(ctx context.Context, oauthToken, parentPath string, parentID int, childEndpoint string) ([]int, error) {
 	reqURL := fmt.Sprintf("%s%s%d/%s/", tc.baseURL, parentPath, parentID, childEndpoint)
 
-	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -475,13 +475,13 @@ func (tc *TowerClient) listChildIDs(oauthToken, parentPath string, parentID int,
 }
 
 // postChild sends an associate or disassociate request to a sub-resource endpoint.
-func (tc *TowerClient) postChild(oauthToken, reqURL string, payload map[string]interface{}) error {
+func (tc *TowerClient) postChild(ctx context.Context, oauthToken, reqURL string, payload map[string]interface{}) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal body: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, reqURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
@@ -505,8 +505,8 @@ func (tc *TowerClient) postChild(oauthToken, reqURL string, payload map[string]i
 // desiredIDs exactly. It GETs the current associations, calculates the diff,
 // disassociates extras, and associates missing ones. This is idempotent —
 // matching the pattern used by the awx.awx Ansible collection.
-func (tc *TowerClient) SyncChildren(oauthToken, parentPath string, parentID int, childEndpoint string, desiredIDs []int) error {
-	existing, err := tc.listChildIDs(oauthToken, parentPath, parentID, childEndpoint)
+func (tc *TowerClient) SyncChildren(ctx context.Context, oauthToken, parentPath string, parentID int, childEndpoint string, desiredIDs []int) error {
+	existing, err := tc.listChildIDs(ctx, oauthToken, parentPath, parentID, childEndpoint)
 	if err != nil {
 		return fmt.Errorf("list existing %s: %w", childEndpoint, err)
 	}
@@ -524,7 +524,7 @@ func (tc *TowerClient) SyncChildren(oauthToken, parentPath string, parentID int,
 
 	for id := range existingSet {
 		if !desiredSet[id] {
-			if err := tc.postChild(oauthToken, reqURL, map[string]interface{}{
+			if err := tc.postChild(ctx, oauthToken, reqURL, map[string]interface{}{
 				"id": float64(id), "disassociate": true,
 			}); err != nil {
 				return fmt.Errorf("disassociate %s %d: %w", childEndpoint, id, err)
@@ -534,7 +534,7 @@ func (tc *TowerClient) SyncChildren(oauthToken, parentPath string, parentID int,
 
 	for id := range desiredSet {
 		if !existingSet[id] {
-			if err := tc.postChild(oauthToken, reqURL, map[string]interface{}{
+			if err := tc.postChild(ctx, oauthToken, reqURL, map[string]interface{}{
 				"id": float64(id), "associate": true,
 			}); err != nil {
 				return fmt.Errorf("associate %s %d: %w", childEndpoint, id, err)
@@ -556,16 +556,16 @@ func (tc *TowerClient) SyncChildren(oauthToken, parentPath string, parentID int,
 //  7. Create job template (with retry on failure via project update)
 //  8. Associate credentials and instance groups with template
 //  9. Launch job (with retry on failure via project update)
-func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
+func (tc *TowerClient) LaunchJob(ctx context.Context, config TowerJobConfig) (int, error) {
 	// Step 1: Create OAuth token.
-	token, tokenID, err := tc.CreateOAuthToken()
+	token, tokenID, err := tc.CreateOAuthToken(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("create oauth token: %w", err)
 	}
-	defer func() { _ = tc.DeleteOAuthToken(tokenID) }()
+	defer func() { _ = tc.DeleteOAuthToken(ctx, tokenID) }()
 
 	// Step 2: Ensure organization.
-	orgID, err := tc.EnsureResource(token, "/api/v2/organizations/", map[string]interface{}{
+	orgID, err := tc.EnsureResource(ctx, token, "/api/v2/organizations/", map[string]interface{}{
 		"name": config.Organization,
 	})
 	if err != nil {
@@ -573,7 +573,7 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 	}
 
 	// Step 3: Ensure inventory.
-	invID, err := tc.EnsureResource(token, "/api/v2/inventories/", map[string]interface{}{
+	invID, err := tc.EnsureResource(ctx, token, "/api/v2/inventories/", map[string]interface{}{
 		"name":         config.Inventory,
 		"organization": float64(orgID),
 	})
@@ -586,7 +586,7 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 	var credIDs []int
 	if len(config.VaultCredentials) > 0 {
 		// Find the "Vault" credential type ID.
-		vaultTypeID, err := tc.SearchResource(token, "/api/v2/credential_types/", "Vault")
+		vaultTypeID, err := tc.SearchResource(ctx, token, "/api/v2/credential_types/", "Vault")
 		if err != nil {
 			return 0, fmt.Errorf("find Vault credential type: %w", err)
 		}
@@ -595,7 +595,7 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 		}
 		for vaultID, vaultPassword := range config.VaultCredentials {
 			credName := config.Organization + " " + vaultID
-			credID, err := tc.EnsureResource(token, "/api/v2/credentials/", map[string]interface{}{
+			credID, err := tc.EnsureResource(ctx, token, "/api/v2/credentials/", map[string]interface{}{
 				"name":            credName,
 				"credential_type": float64(vaultTypeID),
 				"inputs": map[string]interface{}{
@@ -613,7 +613,7 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 
 	// Look up static credentials by name.
 	for _, credName := range config.Credentials {
-		credID, err := tc.SearchResource(token, "/api/v2/credentials/", credName)
+		credID, err := tc.SearchResource(ctx, token, "/api/v2/credentials/", credName)
 		if err != nil {
 			return 0, fmt.Errorf("find credential %q: %w", credName, err)
 		}
@@ -633,7 +633,7 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 		"scm_update_cache_timeout": float64(config.SCMUpdateCacheTimeout),
 		"scm_clean":                config.SCMClean,
 	}
-	projID, err := tc.EnsureResource(token, "/api/v2/projects/", projData)
+	projID, err := tc.EnsureResource(ctx, token, "/api/v2/projects/", projData)
 	if err != nil {
 		return 0, fmt.Errorf("ensure project: %w", err)
 	}
@@ -653,12 +653,12 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 		// the credential name (must be pre-created on Tower).
 		if config.ExecutionEnvironment.Private {
 			registry := strings.SplitN(config.ExecutionEnvironment.Image, "/", 2)[0]
-			regCredID, _ := tc.SearchResource(token, "/api/v2/credentials/", registry)
+			regCredID, _ := tc.SearchResource(ctx, token, "/api/v2/credentials/", registry)
 			if regCredID > 0 {
 				eeData["credential"] = float64(regCredID)
 			}
 		}
-		eeID, err = tc.EnsureResource(token, "/api/v2/execution_environments/", eeData)
+		eeID, err = tc.EnsureResource(ctx, token, "/api/v2/execution_environments/", eeData)
 		if err != nil {
 			return 0, fmt.Errorf("ensure execution environment: %w", err)
 		}
@@ -687,25 +687,25 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 		templateData["extra_vars"] = string(extraVarsJSON)
 	}
 
-	tmplID, err := tc.EnsureResource(token, "/api/v2/job_templates/", templateData)
+	tmplID, err := tc.EnsureResource(ctx, token, "/api/v2/job_templates/", templateData)
 	if err != nil {
 		// Retry: update project SCM, then retry template creation.
-		_ = tc.UpdateProject(token, projID)
-		tmplID, err = tc.EnsureResource(token, "/api/v2/job_templates/", templateData)
+		_ = tc.UpdateProject(ctx, token, projID)
+		tmplID, err = tc.EnsureResource(ctx, token, "/api/v2/job_templates/", templateData)
 		if err != nil {
 			return 0, fmt.Errorf("ensure job template: %w", err)
 		}
 	}
 
 	// Step 8: Sync credentials with the template (idempotent diff-based).
-	if err := tc.SyncChildren(token, "/api/v2/job_templates/", tmplID, "credentials", credIDs); err != nil {
+	if err := tc.SyncChildren(ctx, token, "/api/v2/job_templates/", tmplID, "credentials", credIDs); err != nil {
 		return 0, fmt.Errorf("sync credentials: %w", err)
 	}
 
 	// Sync instance groups with the template.
 	var igIDs []int
 	for _, igName := range config.InstanceGroups {
-		igID, err := tc.SearchResource(token, "/api/v2/instance_groups/", igName)
+		igID, err := tc.SearchResource(ctx, token, "/api/v2/instance_groups/", igName)
 		if err != nil {
 			slog.Warn("LaunchJob: instance group lookup failed, skipping", "name", igName, "error", err)
 			continue
@@ -716,7 +716,7 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 		}
 		igIDs = append(igIDs, igID)
 	}
-	if err := tc.SyncChildren(token, "/api/v2/job_templates/", tmplID, "instance_groups", igIDs); err != nil {
+	if err := tc.SyncChildren(ctx, token, "/api/v2/job_templates/", tmplID, "instance_groups", igIDs); err != nil {
 		return 0, fmt.Errorf("sync instance groups: %w", err)
 	}
 
@@ -726,11 +726,11 @@ func (tc *TowerClient) LaunchJob(config TowerJobConfig) (int, error) {
 	}
 
 	launchPath := fmt.Sprintf("/api/v2/job_templates/%d/launch/", tmplID)
-	jobID, err := tc.CreateResource(token, launchPath, launchData)
+	jobID, err := tc.CreateResource(ctx, token, launchPath, launchData)
 	if err != nil {
 		// Retry: update project SCM, then retry launch.
-		_ = tc.UpdateProject(token, projID)
-		jobID, err = tc.CreateResource(token, launchPath, launchData)
+		_ = tc.UpdateProject(ctx, token, projID)
+		jobID, err = tc.CreateResource(ctx, token, launchPath, launchData)
 		if err != nil {
 			return 0, fmt.Errorf("launch job: %w", err)
 		}

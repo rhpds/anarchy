@@ -465,7 +465,7 @@ func launchTowerJob(rc *runner.RunContext, action, newState string, extraSpecVar
 
 	slog.Info("launching tower job", "action", action, "subject", rc.SubjectName(), "entryPoint", playbook)
 
-	jobID, err := tc.LaunchJob(config)
+	jobID, err := tc.LaunchJob(rc.Ctx, config)
 	if err != nil {
 		return fmt.Errorf("launch tower job: %w", err)
 	}
@@ -551,7 +551,7 @@ func cancelTowerJob(rc *runner.RunContext, action string) {
 		return
 	}
 
-	if err := tc.CancelJob(token, int(jobIDFloat)); err != nil {
+	if err := tc.CancelJob(rc.Ctx, token, int(jobIDFloat)); err != nil {
 		slog.Error("cancelTowerJob: failed to cancel job", "job", int(jobIDFloat), "error", err)
 	} else {
 		slog.Info("cancelTowerJob: canceled job", "job", int(jobIDFloat), "action", action)

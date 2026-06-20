@@ -242,7 +242,7 @@ func TestTowerGetJobStatus(t *testing.T) {
 	tc := NewTowerClient("unused", "user", "pass", nil)
 	tc.baseURL = server.URL
 
-	status, err := tc.GetJobStatus("test-oauth-token", 42)
+	status, err := tc.GetJobStatus(context.Background(), "test-oauth-token", 42)
 	if err != nil {
 		t.Fatalf("GetJobStatus returned error: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestTowerCancelJob(t *testing.T) {
 	tc := NewTowerClient("unused", "user", "pass", nil)
 	tc.baseURL = server.URL
 
-	if err := tc.CancelJob("cancel-token", 99); err != nil {
+	if err := tc.CancelJob(context.Background(), "cancel-token", 99); err != nil {
 		t.Fatalf("CancelJob returned error: %v", err)
 	}
 }
@@ -285,7 +285,7 @@ func TestTowerCancelJobAlreadyFinished(t *testing.T) {
 	tc := NewTowerClient("unused", "user", "pass", nil)
 	tc.baseURL = server.URL
 
-	if err := tc.CancelJob("token", 99); err != nil {
+	if err := tc.CancelJob(context.Background(), "token", 99); err != nil {
 		t.Fatalf("CancelJob should not error on 405, got: %v", err)
 	}
 }
@@ -391,7 +391,7 @@ func TestTowerLaunchJob(t *testing.T) {
 		Timeout:               600,
 	}
 
-	jobID, err := tc.LaunchJob(jobConfig)
+	jobID, err := tc.LaunchJob(context.Background(), jobConfig)
 	if err != nil {
 		t.Fatalf("LaunchJob returned error: %v", err)
 	}
@@ -423,7 +423,7 @@ func TestTowerCreateOAuthToken(t *testing.T) {
 	tc := NewTowerClient("unused", "admin", "secret", nil)
 	tc.baseURL = server.URL
 
-	token, tokenID, err := tc.CreateOAuthToken()
+	token, tokenID, err := tc.CreateOAuthToken(context.Background())
 	if err != nil {
 		t.Fatalf("CreateOAuthToken returned error: %v", err)
 	}
@@ -455,7 +455,7 @@ func TestTowerDeleteOAuthToken(t *testing.T) {
 	tc := NewTowerClient("unused", "admin", "secret", nil)
 	tc.baseURL = server.URL
 
-	if err := tc.DeleteOAuthToken(42); err != nil {
+	if err := tc.DeleteOAuthToken(context.Background(), 42); err != nil {
 		t.Fatalf("DeleteOAuthToken returned error: %v", err)
 	}
 }
@@ -490,7 +490,7 @@ func TestTowerEnsureResourceCreate(t *testing.T) {
 	tc := NewTowerClient("unused", "admin", "secret", nil)
 	tc.baseURL = server.URL
 
-	id, err := tc.EnsureResource("my-token", "/api/v2/organizations/", map[string]interface{}{
+	id, err := tc.EnsureResource(context.Background(), "my-token", "/api/v2/organizations/", map[string]interface{}{
 		"name": "org1",
 	})
 	if err != nil {
@@ -530,7 +530,7 @@ func TestTowerEnsureResourceExisting(t *testing.T) {
 	tc := NewTowerClient("unused", "admin", "secret", nil)
 	tc.baseURL = server.URL
 
-	id, err := tc.EnsureResource("my-token", "/api/v2/organizations/", map[string]interface{}{
+	id, err := tc.EnsureResource(context.Background(), "my-token", "/api/v2/organizations/", map[string]interface{}{
 		"name": "org1",
 	})
 	if err != nil {
@@ -658,7 +658,7 @@ func TestTowerLaunchJobWithEEAndCredentials(t *testing.T) {
 		Credentials:    []string{"my-cred"},
 	}
 
-	jobID, err := tc.LaunchJob(jobConfig)
+	jobID, err := tc.LaunchJob(context.Background(), jobConfig)
 	if err != nil {
 		t.Fatalf("LaunchJob returned error: %v", err)
 	}
@@ -724,7 +724,7 @@ func TestSyncChildrenIdempotent(t *testing.T) {
 	tc.baseURL = server.URL
 
 	// Desired: keep 10, drop 20, add 30.
-	err := tc.SyncChildren("tok", "/api/v2/job_templates/", 5, "credentials", []int{10, 30})
+	err := tc.SyncChildren(context.Background(), "tok", "/api/v2/job_templates/", 5, "credentials", []int{10, 30})
 	if err != nil {
 		t.Fatalf("SyncChildren error: %v", err)
 	}
@@ -762,7 +762,7 @@ func TestSyncChildrenNoChanges(t *testing.T) {
 	tc.baseURL = server.URL
 
 	// Desired matches existing — no POSTs should happen.
-	err := tc.SyncChildren("tok", "/api/v2/job_templates/", 5, "credentials", []int{10, 20})
+	err := tc.SyncChildren(context.Background(), "tok", "/api/v2/job_templates/", 5, "credentials", []int{10, 20})
 	if err != nil {
 		t.Fatalf("SyncChildren error: %v", err)
 	}
@@ -826,7 +826,7 @@ func TestTowerLaunchJobSCMSettings(t *testing.T) {
 		Timeout:               300,
 	}
 
-	_, err := tc.LaunchJob(jobConfig)
+	_, err := tc.LaunchJob(context.Background(), jobConfig)
 	if err != nil {
 		t.Fatalf("LaunchJob returned error: %v", err)
 	}

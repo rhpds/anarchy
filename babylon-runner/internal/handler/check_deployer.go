@@ -53,7 +53,7 @@ func checkDeployerJob(rc *runner.RunContext, action string) error {
 	}
 
 	// Get job status
-	jobStatus, err := tc.GetJobStatus(token, deployerJob)
+	jobStatus, err := tc.GetJobStatus(rc.Ctx, token, deployerJob)
 	if err != nil {
 		slog.Error("checkDeployerJob: failed to get job status", "action", action, "job", deployerJob, "subject", rc.SubjectName(), "error", err)
 		rc.ContinueAction("5m")
