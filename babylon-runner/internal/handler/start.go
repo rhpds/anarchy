@@ -43,6 +43,10 @@ func runStart(rc *runner.RunContext) error {
 	if rc.SandboxAPIInUse() && sandboxActionEnabled(rc, "start") {
 		if err := sandboxStart(rc); err != nil {
 			slog.Error("runStart: sandbox start error", "subject", rc.SubjectName(), "error", err)
+			if rc.DeployerDisabled("start") {
+				rc.FinishAction("error")
+				return nil
+			}
 		}
 		// If deployer disabled for start: mark started immediately.
 		if rc.DeployerDisabled("start") {

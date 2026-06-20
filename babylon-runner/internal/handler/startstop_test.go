@@ -6,8 +6,9 @@ import (
 	"github.com/rhpds/anarchy/babylon-runner/internal/types"
 )
 
-// TestHandleStartDeployerDisabled tests start when deployer is disabled.
-// Sandbox API in use, deployer disabled, sandbox action enabled -> should finish with started state.
+// TestHandleStartDeployerDisabled tests start when deployer is disabled
+// and sandbox API fails (no UUID). Should finish with error status,
+// matching Ansible governor block/rescue behavior.
 func TestHandleStartDeployerDisabled(t *testing.T) {
 	server, calls := newTestAnarchyServer(t)
 	defer server.Close()
@@ -15,6 +16,7 @@ func TestHandleStartDeployerDisabled(t *testing.T) {
 	rc := newTestRunContext(t, server)
 
 	// Configure: sandbox API in use, deployer disabled for start.
+	// No UUID configured — sandboxStart will fail.
 	rc.Payload.Governor.Spec.Vars.Meta = &types.Meta{
 		AWSSandboxed: true,
 		Deployer: &types.DeployerMeta{
@@ -28,9 +30,10 @@ func TestHandleStartDeployerDisabled(t *testing.T) {
 		t.Fatalf("handleStart returned error: %v", err)
 	}
 
-	// Should have 2 calls: set startTimestamp, then mark started.
-	if len(*calls) != 2 {
-		t.Fatalf("expected 2 calls, got %d", len(*calls))
+	// Should have 1 call: set startTimestamp only.
+	// Sandbox error with deployer disabled -> FinishAction("error").
+	if len(*calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(*calls))
 	}
 
 	// First call: set startTimestamp.
@@ -46,43 +49,18 @@ func TestHandleStartDeployerDisabled(t *testing.T) {
 		t.Error("expected startTimestamp in call[0]")
 	}
 
-	// Second call: mark started.
-	c1 := (*calls)[1]
-	if c1.Method != "PATCH" {
-		t.Errorf("call[1] method = %s, want PATCH", c1.Method)
-	}
-	patch1 := c1.Body["patch"].(map[string]interface{})
-
-	// Verify metadata labels.
-	meta1 := patch1["metadata"].(map[string]interface{})
-	labels1 := meta1["labels"].(map[string]interface{})
-	if labels1["state"] != "started" {
-		t.Errorf("state label = %v, want started", labels1["state"])
-	}
-
-	// Verify spec vars.
-	spec1 := patch1["spec"].(map[string]interface{})
-	vars1 := spec1["vars"].(map[string]interface{})
-	if vars1["current_state"] != "started" {
-		t.Errorf("current_state = %v, want started", vars1["current_state"])
-	}
-
-	// Verify status.
-	status1 := patch1["status"].(map[string]interface{})
-	actions1 := status1["actions"].(map[string]interface{})
-	start1 := actions1["start"].(map[string]interface{})
-	if _, ok := start1["completeTimestamp"]; !ok {
-		t.Error("expected completeTimestamp in call[1]")
-	}
-
-	// FinishAction should have been called.
+	// FinishAction should have been called with "error".
 	if rc.Result.FinishAction == nil {
-		t.Error("expected FinishAction to be called")
+		t.Fatal("expected FinishAction to be called")
+	}
+	if rc.Result.FinishAction.State != "error" {
+		t.Errorf("FinishAction state = %q, want %q", rc.Result.FinishAction.State, "error")
 	}
 }
 
-// TestHandleStopDeployerDisabled tests stop when deployer is disabled.
-// Sandbox API in use, deployer disabled, sandbox action enabled -> should finish with stopped state.
+// TestHandleStopDeployerDisabled tests stop when deployer is disabled
+// and sandbox API fails (no UUID). Should finish with error status,
+// matching Ansible governor block/rescue behavior.
 func TestHandleStopDeployerDisabled(t *testing.T) {
 	server, calls := newTestAnarchyServer(t)
 	defer server.Close()
@@ -90,6 +68,7 @@ func TestHandleStopDeployerDisabled(t *testing.T) {
 	rc := newTestRunContext(t, server)
 
 	// Configure: sandbox API in use, deployer disabled for stop.
+	// No UUID configured — sandboxStop will fail.
 	rc.Payload.Governor.Spec.Vars.Meta = &types.Meta{
 		AWSSandboxed: true,
 		Deployer: &types.DeployerMeta{
@@ -103,9 +82,10 @@ func TestHandleStopDeployerDisabled(t *testing.T) {
 		t.Fatalf("handleStop returned error: %v", err)
 	}
 
-	// Should have 2 calls: set startTimestamp, then mark stopped.
-	if len(*calls) != 2 {
-		t.Fatalf("expected 2 calls, got %d", len(*calls))
+	// Should have 1 call: set startTimestamp only.
+	// Sandbox error with deployer disabled -> FinishAction("error").
+	if len(*calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(*calls))
 	}
 
 	// First call: set startTimestamp.
@@ -121,38 +101,12 @@ func TestHandleStopDeployerDisabled(t *testing.T) {
 		t.Error("expected startTimestamp in call[0]")
 	}
 
-	// Second call: mark stopped.
-	c1 := (*calls)[1]
-	if c1.Method != "PATCH" {
-		t.Errorf("call[1] method = %s, want PATCH", c1.Method)
-	}
-	patch1 := c1.Body["patch"].(map[string]interface{})
-
-	// Verify metadata labels.
-	meta1 := patch1["metadata"].(map[string]interface{})
-	labels1 := meta1["labels"].(map[string]interface{})
-	if labels1["state"] != "stopped" {
-		t.Errorf("state label = %v, want stopped", labels1["state"])
-	}
-
-	// Verify spec vars.
-	spec1 := patch1["spec"].(map[string]interface{})
-	vars1 := spec1["vars"].(map[string]interface{})
-	if vars1["current_state"] != "stopped" {
-		t.Errorf("current_state = %v, want stopped", vars1["current_state"])
-	}
-
-	// Verify status.
-	status1 := patch1["status"].(map[string]interface{})
-	actions1 := status1["actions"].(map[string]interface{})
-	stop1 := actions1["stop"].(map[string]interface{})
-	if _, ok := stop1["completeTimestamp"]; !ok {
-		t.Error("expected completeTimestamp in call[1]")
-	}
-
-	// FinishAction should have been called.
+	// FinishAction should have been called with "error".
 	if rc.Result.FinishAction == nil {
-		t.Error("expected FinishAction to be called")
+		t.Fatal("expected FinishAction to be called")
+	}
+	if rc.Result.FinishAction.State != "error" {
+		t.Errorf("FinishAction state = %q, want %q", rc.Result.FinishAction.State, "error")
 	}
 }
 

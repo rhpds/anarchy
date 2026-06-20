@@ -62,6 +62,8 @@ func runStop(rc *runner.RunContext) error {
 	if rc.SandboxAPIInUse() && sandboxActionEnabled(rc, "stop") {
 		if err := sandboxStop(rc); err != nil {
 			slog.Error("runStop: sandbox stop error", "subject", rc.SubjectName(), "error", err)
+			rc.FinishAction("error")
+			return nil
 		}
 		ts := types.NowUTC()
 		if err := rc.SubjectUpdate(types.SubjectPatch{
