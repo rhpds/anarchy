@@ -1353,6 +1353,63 @@ func TestBelowThresholdStaysReady(t *testing.T) {
 	}
 }
 
+// --- Run loop tests ---
+
+func TestRunLoopStopsOnContextCancel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	r := newTestRunner(server.URL)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		r.Run(ctx)
+		close(done)
+	}()
+
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not stop after context cancel")
+	}
+}
+
+func TestRunLoopSleepsOnError(t *testing.T) {
+	var pollCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pollCount.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cfg := Config{
+		AnarchyURL:      server.URL,
+		RunnerName:      "r",
+		PodName:         "p",
+		RunnerToken:     "t",
+		PollingInterval: 200 * time.Millisecond,
+		RequestTimeout:  1 * time.Second,
+		MaxPollFailures: 100,
+	}
+	r := New(cfg, nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
+	defer cancel()
+
+	r.Run(ctx)
+
+	count := pollCount.Load()
+	if count > 5 {
+		t.Errorf("poll count = %d, expected <=5 (should sleep between errors)", count)
+	}
+}
+
 // --- helper ---
 
 func newTestRunner(serverURL string) *Runner {

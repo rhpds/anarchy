@@ -8,12 +8,9 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
-	"os/signal"
 	"runtime/debug"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/rhpds/anarchy/babylon-runner/internal/clients"
@@ -64,27 +61,27 @@ func (r *Runner) SetHandlers(handlers map[string]HandlerFunc) {
 // IsReady reports whether the runner has successfully contacted the Anarchy API.
 func (r *Runner) IsReady() bool { return r.ready.Load() }
 
-// Run starts the polling loop. It stops on SIGTERM or SIGINT.
-func (r *Runner) Run() {
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
-	defer stop()
-
+// Run starts the polling loop. It stops when the context is cancelled.
+func (r *Runner) Run(ctx context.Context) {
 	slog.Info("babylon-runner starting",
 		"runner", r.config.RunnerName,
 		"pod", r.config.PodName,
 		"url", r.config.AnarchyURL)
 
-	ticker := time.NewTicker(r.config.PollingInterval)
-	defer ticker.Stop()
-
-	r.pollOnce(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			slog.Info("shutting down")
 			return
-		case <-ticker.C:
-			r.pollOnce(ctx)
+		default:
+		}
+		if err := r.pollOnce(ctx); err != nil {
+			select {
+			case <-ctx.Done():
+				slog.Info("shutting down")
+				return
+			case <-time.After(r.config.PollingInterval):
+			}
 		}
 	}
 }

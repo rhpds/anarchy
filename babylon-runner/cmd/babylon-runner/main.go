@@ -5,6 +5,8 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/rhpds/anarchy/babylon-runner/internal/handler"
 	"github.com/rhpds/anarchy/babylon-runner/internal/httputil"
@@ -17,6 +19,9 @@ import (
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
 
 	cfg, err := runner.ConfigFromEnv()
 	if err != nil {
@@ -43,7 +48,7 @@ func main() {
 		}
 	}()
 
-	r.Run()
+	r.Run(ctx)
 }
 
 func buildClientset() (kubernetes.Interface, error) {
