@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/rhpds/anarchy/babylon-runner/internal/clients"
+	"github.com/rhpds/anarchy/babylon-runner/internal/metrics"
 	"github.com/rhpds/anarchy/babylon-runner/internal/types"
 	"k8s.io/client-go/kubernetes"
 )
@@ -89,7 +90,9 @@ func (r *Runner) Run(ctx context.Context) {
 // pollOnce performs a single poll cycle: fetch a run, dispatch it to
 // the appropriate handler, and post the result back to Anarchy.
 func (r *Runner) pollOnce(ctx context.Context) error {
+	pollStart := time.Now()
 	payload, err := r.getRun(ctx)
+	metrics.PollDuration.Observe(time.Since(pollStart).Seconds())
 	if err != nil {
 		count := r.consecutiveErrors.Add(1)
 		slog.Error("poll failed", "error", err, "consecutiveErrors", count)
@@ -104,6 +107,9 @@ func (r *Runner) pollOnce(ctx context.Context) error {
 	if payload == nil {
 		return nil
 	}
+
+	metrics.ActiveRun.Set(1)
+	defer metrics.ActiveRun.Set(0)
 
 	rc := &RunContext{
 		Ctx:                  ctx,
@@ -128,6 +134,10 @@ func (r *Runner) pollOnce(ctx context.Context) error {
 		"subject", subject,
 		"handler", payload.Handler.Type+":"+handlerName)
 
+	handlerType := payload.Handler.Type
+	actionName := handlerName
+	runStart := time.Now()
+
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -148,6 +158,9 @@ func (r *Runner) pollOnce(ctx context.Context) error {
 			rc.Result.StatusMessage = err.Error()
 		}
 	}()
+
+	metrics.RunDuration.WithLabelValues(handlerType, actionName).Observe(time.Since(runStart).Seconds())
+	metrics.RunTotal.WithLabelValues(handlerType, actionName, rc.Result.Status).Inc()
 
 	if err := r.postResult(ctx, rc.RunName(), rc.Result); err != nil {
 		slog.Warn("post result rejected (will be re-dispatched)", "run", rc.RunName(), "subject", subject, "error", err)

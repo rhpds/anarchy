@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/rhpds/anarchy/babylon-runner/internal/httputil"
+	"github.com/rhpds/anarchy/babylon-runner/internal/metrics"
 )
 
 const vaultVarChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -122,7 +123,7 @@ func NewTowerClient(hostname, username, password string, tlsConfig *tls.Config) 
 		username: username,
 		password: password,
 		client: &http.Client{
-			Transport: httputil.NewTransport(tlsConfig),
+			Transport: httputil.InstrumentedTransport(httputil.NewTransport(tlsConfig), metrics.TowerJobDuration, "http"),
 		},
 	}
 }

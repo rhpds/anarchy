@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rhpds/anarchy/babylon-runner/internal/httputil"
+	"github.com/rhpds/anarchy/babylon-runner/internal/metrics"
 )
 
 // SandboxAPIClient communicates with the Sandbox API to manage
@@ -46,7 +47,7 @@ func NewSandboxAPIClient(baseURL, loginToken string, opts ...SandboxAPIOption) *
 		baseURL: baseURL,
 		client: &http.Client{
 			Timeout:   30 * time.Second,
-			Transport: httputil.NewTransport(nil),
+			Transport: httputil.InstrumentedTransport(httputil.NewTransport(nil), metrics.SandboxAPIDuration, "http"),
 		},
 		retryDelays: []time.Duration{
 			5 * time.Second,
