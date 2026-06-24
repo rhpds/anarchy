@@ -2,7 +2,6 @@ import logging
 
 from anarchy import Anarchy
 from anarchywatchobject import AnarchyWatchObject
-from metrics import AppMetrics
 
 import anarchyrun
 import anarchyrunnerpod
@@ -40,11 +39,6 @@ class AnarchyRunner(AnarchyWatchObject):
         logging.info(f"Cache preloaded {default}")
 
     async def update_status(self):
-        pending_count = len(anarchyrun.AnarchyRun.pending_run_names)
-        AppMetrics.pending_runs.set(
-            {"namespace": self.namespace},
-            pending_count,
-        )
         if Anarchy.running_all_in_one:
             return
         pods_status = []
