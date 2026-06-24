@@ -14,20 +14,6 @@ class AnarchyRunner(AnarchyWatchObject):
     preload = True
 
     @classmethod
-    def handle_watch_deleted(cls, event_object):
-        if isinstance(event_object, dict):
-            name = event_object['metadata']['name']
-            namespace = event_object['metadata']['namespace']
-        else:
-            name = event_object.metadata.name
-            namespace = event_object.metadata.namespace
-        AppMetrics.pending_runs.set(
-            {"runner_name": name, "namespace": namespace},
-            0,
-        )
-        super().handle_watch_deleted(event_object)
-
-    @classmethod
     async def on_startup(cls):
         if Anarchy.running_all_in_one:
             await cls.on_startup_running_all_in_one()
@@ -56,7 +42,7 @@ class AnarchyRunner(AnarchyWatchObject):
     async def update_status(self):
         pending_count = len(anarchyrun.AnarchyRun.pending_run_names)
         AppMetrics.pending_runs.set(
-            {"runner_name": self.name, "namespace": self.namespace},
+            {"namespace": self.namespace},
             pending_count,
         )
         if Anarchy.running_all_in_one:

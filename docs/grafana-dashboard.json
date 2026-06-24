@@ -4186,7 +4186,6 @@
                 "indexByName": {},
                 "renameByName": {
                   "namespace": "Namespace",
-                  "runner_name": "Runner",
                   "Value": "Pending Runs"
                 }
               }

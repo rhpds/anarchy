@@ -33,9 +33,8 @@ class AppMetrics:
 
     pending_runs = Gauge(
         "anarchy_runner_pending_runs",
-        "Number of pending runs waiting for a runner pod",
+        "Total number of pending AnarchyRuns in the namespace",
         {
-            "runner_name": "The AnarchyRunner resource name",
             "namespace": "The Kubernetes namespace",
         },
         registry=registry,
