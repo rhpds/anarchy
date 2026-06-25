@@ -49,7 +49,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "000000025"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Current API HTTP requests per second.",
       "fieldConfig": {
@@ -100,7 +100,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
           "expr": "sum(rate(anarchy_api_http_request_duration_seconds_count[5m]))",
@@ -116,7 +116,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "000000025"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Average HTTP response time across all API endpoints.",
       "fieldConfig": {
@@ -175,7 +175,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
           "expr": "sum(rate(anarchy_api_http_request_duration_seconds_sum[5m])) / sum(rate(anarchy_api_http_request_duration_seconds_count[5m]))",
@@ -191,7 +191,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "000000025"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Percentage of API requests returning 4xx/5xx status codes.",
       "fieldConfig": {
@@ -250,7 +250,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
           "expr": "100 * sum(rate(anarchy_api_http_request_duration_seconds_count{status=~\"4..|5..\"}[5m])) / clamp_min(sum(rate(anarchy_api_http_request_duration_seconds_count[5m])), 1e-10)",
@@ -266,7 +266,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "000000025"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Percentage of class method executions ending in error (operator + API).",
       "fieldConfig": {
@@ -325,7 +325,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
           "expr": "100 * sum(rate(anarchy_process_time_seconds_count{status=\"error\"}[5m])) / clamp_min(sum(rate(anarchy_process_time_seconds_count[5m])), 1e-10)",
@@ -341,7 +341,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "000000025"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Shows the percentage of errors per application  and method over the last 24 hours. Calculated as 100 * increase(error) / increase(error + success) from the reporting_process_time_seconds_count counter. Uses an instant query; each gauge represents one app. Sorted descending. Suggested thresholds: 1% (warn), 5% (critical).",
       "fieldConfig": {
@@ -401,7 +401,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
           "exemplar": false,
@@ -419,7 +419,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "000000025"
+        "uid": "${DS_PROMETHEUS}"
       },
       "description": "Shows the percentage of errors per application over the last 24 hours. Calculated as 100 * increase(error) / increase(error + success) from the reporting_process_time_seconds_count counter. Uses an instant query; each gauge represents one app. Sorted descending. Suggested thresholds: 1% (warn), 5% (critical).",
       "fieldConfig": {
@@ -479,7 +479,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
           "exemplar": false,
@@ -507,7 +507,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "fieldConfig": {
             "defaults": {
@@ -598,7 +598,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(rate(anarchy_api_http_request_duration_seconds_count{route=~\"$route\"}[5m])) by (route, method)",
@@ -614,7 +614,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "fieldConfig": {
             "defaults": {
@@ -705,7 +705,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(rate(anarchy_api_http_request_duration_seconds_sum{route=~\"$route\"}[5m])) by (route) / sum(rate(anarchy_api_http_request_duration_seconds_count{route=~\"$route\"}[5m])) by (route)",
@@ -721,7 +721,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "fieldConfig": {
             "defaults": {
@@ -812,7 +812,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(anarchy_api_http_request_duration_seconds_bucket{route=~\"$route\"}[5m])) by (le, route))",
@@ -828,7 +828,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "fieldConfig": {
             "defaults": {
@@ -919,7 +919,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(rate(anarchy_api_http_request_duration_seconds_count{status=~\"4..|5..\", route=~\"$route\"}[5m])) by (route, status)",
@@ -935,7 +935,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "fieldConfig": {
             "defaults": {
@@ -994,7 +994,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "exemplar": false,
@@ -1012,7 +1012,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1103,7 +1103,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.99, sum(rate(anarchy_api_http_request_duration_seconds_bucket{route=~\"$route\"}[5m])) by (le, route))",
@@ -1119,7 +1119,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1210,7 +1210,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(rate(anarchy_api_http_request_duration_seconds_count{route=~\"$route\"}[5m])) by (status)",
@@ -1226,7 +1226,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1276,7 +1276,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(increase(anarchy_api_http_request_duration_seconds_count[1h])) by (method)",
@@ -1293,7 +1293,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1343,7 +1343,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sort_desc(sum(increase(anarchy_api_http_request_duration_seconds_count{route=~\"$route\"}[1h])) by (route))",
@@ -1360,7 +1360,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1451,7 +1451,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(rate(anarchy_api_http_request_duration_seconds_sum{route=~\"$route\"}[5m])) / sum(rate(anarchy_api_http_request_duration_seconds_count{route=~\"$route\"}[5m]))",
@@ -1463,7 +1463,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(anarchy_api_http_request_duration_seconds_bucket{route=~\"$route\"}[5m])) by (le))",
@@ -1475,7 +1475,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.99, sum(rate(anarchy_api_http_request_duration_seconds_bucket{route=~\"$route\"}[5m])) by (le))",
@@ -1491,7 +1491,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "fieldConfig": {
             "defaults": {
@@ -1645,7 +1645,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(rate(anarchy_api_http_request_duration_seconds_sum{route=~\"$route\"}[5m])) by (route, method) / sum(rate(anarchy_api_http_request_duration_seconds_count{route=~\"$route\"}[5m])) by (route, method)",
@@ -1657,7 +1657,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(anarchy_api_http_request_duration_seconds_bucket{route=~\"$route\"}[5m])) by (le, route, method))",
@@ -1669,7 +1669,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.99, sum(rate(anarchy_api_http_request_duration_seconds_bucket{route=~\"$route\"}[5m])) by (le, route, method))",
@@ -1681,7 +1681,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(rate(anarchy_api_http_request_duration_seconds_count{route=~\"$route\"}[5m])) by (route, method)",
@@ -1735,7 +1735,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "This chart shows the average duration of process executions for each method, grouped by method and app over time.",
           "fieldConfig": {
@@ -1827,7 +1827,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(rate(anarchy_process_time_seconds_sum{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (app)\n/\nsum(rate(anarchy_process_time_seconds_count{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (app)",
@@ -1843,7 +1843,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "This chart shows the 95th percentile of execution times, providing insights into the longest durations affecting most requests.",
           "fieldConfig": {
@@ -1935,7 +1935,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(anarchy_process_time_seconds_bucket{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (le, app))",
@@ -1951,7 +1951,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "This chart shows the total time spent on process executions for each method, aggregated over time.",
           "fieldConfig": {
@@ -2043,7 +2043,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(rate(anarchy_process_time_seconds_sum{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (app)",
@@ -2059,7 +2059,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "This chart shows the total number of successful executions per method, updated every 5 minutes.",
           "fieldConfig": {
@@ -2152,7 +2152,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(rate(anarchy_process_time_seconds_count{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (app)",
@@ -2168,7 +2168,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "This chart shows the total number of successful executions per method, updated every 5 minutes.",
           "fieldConfig": {
@@ -2261,7 +2261,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(increase(anarchy_process_time_seconds_count{status=\"error\", app=~\"$app\", component=~\"$component\"}[5m])) by (app)",
@@ -2277,7 +2277,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "99th percentile execution time per class. Captures extreme outliers that P95 might miss.",
           "fieldConfig": {
@@ -2369,7 +2369,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.99, sum(rate(anarchy_process_time_seconds_bucket{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (le, app))",
@@ -2385,7 +2385,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "Instantaneous execution rate per class, showing how many method calls per second each class handles.",
           "fieldConfig": {
@@ -2477,7 +2477,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(rate(anarchy_process_time_seconds_count{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (app)",
@@ -2493,7 +2493,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "Combined view of average, P95, and P99 latency for the selected class(es).",
           "fieldConfig": {
@@ -2585,7 +2585,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(rate(anarchy_process_time_seconds_sum{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) / sum(rate(anarchy_process_time_seconds_count{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m]))",
@@ -2597,7 +2597,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(anarchy_process_time_seconds_bucket{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (le))",
@@ -2609,7 +2609,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.99, sum(rate(anarchy_process_time_seconds_bucket{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (le))",
@@ -2625,7 +2625,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "Classes with the highest execution volume in the last hour.",
           "fieldConfig": {
@@ -2676,7 +2676,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sort_desc(sum(increase(anarchy_process_time_seconds_count{status=\"success\", component=~\"$component\"}[1h])) by (app))",
@@ -2693,7 +2693,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "Stacked view of success and error executions per class, showing the proportion of failures.",
           "fieldConfig": {
@@ -2785,7 +2785,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(rate(anarchy_process_time_seconds_count{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (app)",
@@ -2797,7 +2797,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(rate(anarchy_process_time_seconds_count{status=\"error\", app=~\"$app\", component=~\"$component\"}[5m])) by (app)",
@@ -2827,7 +2827,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "This chart shows the average duration of process executions for each method, grouped by method and app over time.",
           "fieldConfig": {
@@ -2922,7 +2922,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(rate(anarchy_process_time_seconds_sum{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (app, method)\n/\nsum(rate(anarchy_process_time_seconds_count{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (app, method)",
@@ -2938,7 +2938,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "This chart shows the 95th percentile of execution times, providing insights into the longest durations affecting most requests.",
           "fieldConfig": {
@@ -3031,7 +3031,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(anarchy_process_time_seconds_bucket{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (le, app, method))",
@@ -3047,7 +3047,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "This chart shows the total time spent on process executions for each method, aggregated over time.",
           "fieldConfig": {
@@ -3138,7 +3138,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(rate(anarchy_process_time_seconds_sum{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (app, method)",
@@ -3154,7 +3154,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "This chart shows the total number of successful executions per method, updated every 5 minutes.",
           "fieldConfig": {
@@ -3247,7 +3247,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(rate(anarchy_process_time_seconds_count{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (app, method)",
@@ -3263,7 +3263,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "This chart shows the total number of successful executions per method, updated every 5 minutes.",
           "fieldConfig": {
@@ -3354,7 +3354,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(increase(anarchy_process_time_seconds_count{status=\"error\", app=~\"$app\", component=~\"$component\"}[$interval])) by (app, method)",
@@ -3370,7 +3370,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "99th percentile execution time per method within each class.",
           "fieldConfig": {
@@ -3462,7 +3462,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.99, sum(rate(anarchy_process_time_seconds_bucket{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (le, app, method))",
@@ -3478,7 +3478,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "Table ranking methods by latency with average, P95, P99, and execution rate.",
           "fieldConfig": {
@@ -3653,7 +3653,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(rate(anarchy_process_time_seconds_sum{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (app, method) / sum(rate(anarchy_process_time_seconds_count{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (app, method)",
@@ -3665,7 +3665,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum(rate(anarchy_process_time_seconds_bucket{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (le, app, method))",
@@ -3677,7 +3677,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "histogram_quantile(0.99, sum(rate(anarchy_process_time_seconds_bucket{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (le, app, method))",
@@ -3689,7 +3689,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(rate(anarchy_process_time_seconds_count{status=\"success\", app=~\"$app\", component=~\"$component\"}[5m])) by (app, method)",
@@ -3701,7 +3701,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum(increase(anarchy_process_time_seconds_count{status=\"error\", app=~\"$app\", component=~\"$component\"}[1h])) by (app, method)",
@@ -3742,7 +3742,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "fieldConfig": {
             "defaults": {
@@ -3825,7 +3825,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
               "expr": "sum by (app, method, status) ( increase(anarchy_process_time_seconds_count{status=\"error\", component=~\"$component\"}[1h]) )",
@@ -3857,7 +3857,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "Total number of pending runs across all runners and namespaces.",
           "fieldConfig": {
@@ -3912,7 +3912,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "expr": "sum(anarchy_runner_pending_runs > 0)",
               "legendFormat": "Total",
@@ -3925,7 +3925,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "Top 10 namespaces with the most pending runs.",
           "fieldConfig": {
@@ -3980,7 +3980,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "expr": "topk(10, sum(anarchy_runner_pending_runs > 0) by (namespace))",
               "legendFormat": "{{namespace}}",
@@ -3993,7 +3993,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "Aggregated pending runs over time across all runners.",
           "fieldConfig": {
@@ -4071,7 +4071,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "expr": "sum(anarchy_runner_pending_runs)",
               "legendFormat": "Total Pending",
@@ -4084,7 +4084,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "000000025"
+            "uid": "${DS_PROMETHEUS}"
           },
           "description": "Current pending runs per runner, showing only runners with pending runs > 0.",
           "fieldConfig": {
@@ -4163,7 +4163,7 @@
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "000000025"
+                "uid": "${DS_PROMETHEUS}"
               },
               "expr": "anarchy_runner_pending_runs > 0",
               "format": "table",
@@ -4227,7 +4227,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "000000025"
+          "uid": "${DS_PROMETHEUS}"
         },
         "definition": "label_values(anarchy_process_time_seconds_bucket, component)",
         "includeAll": true,
@@ -4256,7 +4256,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "000000025"
+          "uid": "${DS_PROMETHEUS}"
         },
         "definition": "label_values(anarchy_process_time_seconds_bucket{component=~\"$component\"}, app)",
         "includeAll": true,
@@ -4285,7 +4285,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "000000025"
+          "uid": "${DS_PROMETHEUS}"
         },
         "definition": "label_values(anarchy_api_http_request_duration_seconds_bucket, route)",
         "includeAll": true,
