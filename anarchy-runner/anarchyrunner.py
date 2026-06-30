@@ -65,7 +65,7 @@ class AnarchyRunner:
         try:
             response = requests.get(
                 f"{self.anarchy_url}/run",
-                headers=dict(Authorization=self.auth_header),
+                headers={"Authorization": self.auth_header},
                 timeout=self.request_timeout,
             )
             if response.status_code != 200:
@@ -81,8 +81,8 @@ class AnarchyRunner:
             try:
                 response = requests.post(
                     f"{self.anarchy_url}/run/{anarchy_run.name}",
-                    headers = dict(Authorization=self.auth_header),
-                    json=dict(result=result),
+                    headers={"Authorization": self.auth_header},
+                    json={"result": result},
                 )
                 if response.status_code != 200:
                     logging.warning('Failed to post run with status %s', response.status_code)
@@ -115,33 +115,33 @@ class AnarchyRunner:
             )
         except AnarchyRunSetupException as e:
             logging.error(f"Failed to setup run: {e}")
-            self.post_result(anarchy_run, dict(
-                rc = 1,
-                status = 'failed',
-                statusMessage = f"Failed to setup run: {e}"
-            ))
+            self.post_result(anarchy_run, {
+                "rc": 1,
+                "status": "failed",
+                "statusMessage": f"Failed to setup run: {e}",
+            })
             return
 
         try:
             result = self.run_ansible(virtual_env)
         except AnarchyRunException as e:
             logging.error(f"{e}")
-            result = dict(
-                rc = e.rc,
-                status = e.status,
-                statusMessage = f"{e}"
-            )
+            result = {
+                "rc": e.rc,
+                "status": e.status,
+                "statusMessage": f"{e}",
+            }
             if e.ansible_run:
                 result['ansibleRun'] = e.ansible_run
             self.post_result(anarchy_run, result)
             return
         except Exception as e:
             logging.exception("Unhandled exception when running ansible")
-            result = dict(
-                 rc = 1,
-                 status = 'failed',
-                 statusMessage = f"Unhandled exception: {e}",
-            )
+            result = {
+                 "rc": 1,
+                 "status": "failed",
+                 "statusMessage": f"Unhandled exception: {e}",
+            }
             self.post_result(anarchy_run, result)
             return
 
@@ -197,11 +197,11 @@ class AnarchyRunner:
                 status_message = status_message,
             )
 
-        result = dict(
-            ansibleRun = run_data,
-            rc = 0,
-            status = 'successful',
-        )
+        result = {
+            "ansibleRun": run_data,
+            "rc": 0,
+            "status": "successful",
+        }
 
         if os.path.exists(self.anarchy_result_path):
             try:
@@ -254,39 +254,39 @@ class AnarchyRunner:
             all_vars.update(anarchy_action.vars)
         if handler_vars:
             all_vars.update(handler_vars)
-        all_vars.update(dict(
-            anarchy_domain = self.domain,
-            anarchy_governor = anarchy_governor.export_for_inventory(),
-            anarchy_governor_name = anarchy_governor.name,
-            anarchy_namespace = self.namespace,
-            anarchy_operator_domain = self.domain,
-            anarchy_output_dir = self.output_dir,
-            anarchy_run = anarchy_run.export_for_inventory(),
-            anarchy_run_pod_name = self.pod_name,
-            anarchy_run_timestamp = datetime.now(timezone.utc).strftime('%FT%TZ'),
-            anarchy_runner_name = self.runner_name,
-            anarchy_runner_token = self.runner_token,
-            anarchy_subject = anarchy_subject.export_for_inventory(),
-            anarchy_subject_name = anarchy_subject.name,
-            anarchy_url = self.anarchy_url,
-        ))
+        all_vars.update({
+            "anarchy_domain": self.domain,
+            "anarchy_governor": anarchy_governor.export_for_inventory(),
+            "anarchy_governor_name": anarchy_governor.name,
+            "anarchy_namespace": self.namespace,
+            "anarchy_operator_domain": self.domain,
+            "anarchy_output_dir": self.output_dir,
+            "anarchy_run": anarchy_run.export_for_inventory(),
+            "anarchy_run_pod_name": self.pod_name,
+            "anarchy_run_timestamp": datetime.now(timezone.utc).strftime('%FT%TZ'),
+            "anarchy_runner_name": self.runner_name,
+            "anarchy_runner_token": self.runner_token,
+            "anarchy_subject": anarchy_subject.export_for_inventory(),
+            "anarchy_subject_name": anarchy_subject.name,
+            "anarchy_url": self.anarchy_url,
+        })
         if anarchy_action:
-            all_vars.update(dict(
-                anarchy_action = anarchy_action.export_for_inventory(),
-                anarchy_action_name = anarchy_action.name,
-                anarchy_action_callback_name_parameter = run_config.callback_name_parameter,
-                anarchy_action_callback_token = anarchy_action.callback_token,
-                anarchy_action_callback_url = anarchy_action.callback_url,
-                anarchy_action_config_name = anarchy_action.action,
-            ))
+            all_vars.update({
+                "anarchy_action": anarchy_action.export_for_inventory(),
+                "anarchy_action_name": anarchy_action.name,
+                "anarchy_action_callback_name_parameter": run_config.callback_name_parameter,
+                "anarchy_action_callback_token": anarchy_action.callback_token,
+                "anarchy_action_callback_url": anarchy_action.callback_url,
+                "anarchy_action_config_name": anarchy_action.action,
+            })
         if handler_type == 'actionCallback':
-            all_vars.update(dict(
-                anarchy_action_callback_name = handler_name,
-            ))
+            all_vars.update({
+                "anarchy_action_callback_name": handler_name,
+            )
         elif handler_type == 'subjectEvent':
-            all_vars.update(dict(
-                anarchy_event_name = handler_name,
-            ))
+            all_vars.update({
+                "anarchy_event_name": handler_name,
+            })
 
         all_vars_dir = os.path.join(self.inventory_path, 'group_vars/all')
         all_vars_file = os.path.join(all_vars_dir, 'anarchy.json')
@@ -359,16 +359,16 @@ class AnarchyRunner:
             raise AnarchyRunSetupException(f"Failed to remove {item} from output dir: {e}")
 
     def setup_playbook(self, play_name, run_config):
-        plays = [dict(
-            name = play_name,
-            hosts = 'localhost',
-            connection = 'local',
-            gather_facts = False,
-            pre_tasks = run_config.pre_tasks,
-            roles = run_config.roles,
-            tasks = run_config.tasks,
-            post_tasks = run_config.post_tasks,
-        )]
+        plays = [{
+            "name": play_name,
+            "hosts": "localhost",
+            "connection": "local",
+            "gather_facts": False,
+            "pre_tasks": run_config.pre_tasks,
+            "roles": run_config.roles,
+            "tasks": run_config.tasks,
+            "post_tasks": run_config.post_tasks,
+        }]
         try:
             with open(self.playbook_path, mode='w') as f:
                 f.write(json.dumps(plays))
