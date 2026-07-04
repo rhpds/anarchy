@@ -1,0 +1,56 @@
+{{/* babylon-runner/helm/templates/deployment.yaml */}}
+{{- if .Values.deploy }}
+{{- $tokenInput := printf "%s-%s-babylon-runner-%s" .Release.Namespace .Release.Name .Values.auth.tokenSalt }}
+{{- $token := $tokenInput | sha256sum | trunc 32 }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "babylon-runner.fullname" . }}
+  namespace: {{ include "babylon-runner.namespaceName" . }}
+  labels:
+    {{- include "babylon-runner.labels" . | nindent 4 }}
+  annotations:
+    reloader.stakater.com/auto: "true"
+    checksum/env: {{ include (print .Template.BasePath "/configmap-env.yaml") . | sha256sum }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.autoscaling.minReplicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "babylon-runner.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "babylon-runner.labels" . | nindent 8 }}
+        {{ .Values.config.anarchyDomain }}/runner: {{ .Values.runnerName }}
+    spec:
+      serviceAccountName: {{ include "babylon-runner.fullname" . }}
+      containers:
+      - name: runner
+        image: {{ include "babylon-runner.image" . }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        envFrom:
+        - configMapRef:
+            name: {{ include "babylon-runner.fullname" . }}-env
+        env:
+        - name: RUNNER_TOKEN
+          value: {{ $token | quote }}
+        ports:
+        - name: metrics
+          containerPort: {{ .Values.config.metricsPort | default 9093 }}
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: metrics
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: metrics
+          initialDelaySeconds: 5
+          periodSeconds: 30
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+{{- end }}
