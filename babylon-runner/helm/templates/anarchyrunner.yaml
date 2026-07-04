@@ -9,4 +9,7 @@ metadata:
     {{- include "babylon-runner.labels" . | nindent 4 }}
   annotations:
     {{ .Values.config.anarchyDomain }}/ignore-pod-management: "true"
+spec:
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
 {{- end }}
