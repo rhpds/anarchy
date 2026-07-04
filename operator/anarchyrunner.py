@@ -101,6 +101,10 @@ class AnarchyRunner(AnarchyCachedKopfObject):
         """
         return self.pod_template.get('spec', {}).get('serviceAccountName', f"anarchy-runner-{self.name}")
 
+    @property
+    def ignore_pod_management(self):
+        return self.annotations.get(f"{Anarchy.domain}/ignore-pod-management") == "true"
+
     def make_pod_template(self, runner_token=None):
         ret = deepcopy(self.pod_template)
 
@@ -216,6 +220,8 @@ class AnarchyRunner(AnarchyCachedKopfObject):
         await self.manage_pods(logger=logger)
 
     async def manage_pods(self, logger):
+        if self.ignore_pod_management:
+            return
         if not self.pods_preloaded:
             await self.preload_pods()
 
