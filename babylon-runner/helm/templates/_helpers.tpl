@@ -42,7 +42,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{-   if .Values.namespace.create -}}
 {{      default (include "babylon-runner.name" .) .Values.namespace.name }}
 {{-   else -}}
-{{      default "default" .Values.namespace.name }}
+{{      default .Release.Namespace .Values.namespace.name }}
 {{-   end -}}
 {{- end -}}
 

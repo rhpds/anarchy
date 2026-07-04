@@ -37,6 +37,7 @@ objects:
     failedBuildsHistoryLimit: 1
     runPolicy: Serial
     source:
+      contextDir: babylon-runner
       git:
         uri: ${GIT_REPO}
         ref: ${GIT_REF}
