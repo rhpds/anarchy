@@ -1,0 +1,30 @@
+{{/* babylon-runner/helm/templates/configmap-env.yaml */}}
+{{- if .Values.deploy }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "babylon-runner.fullname" . }}-env
+  namespace: {{ include "babylon-runner.namespaceName" . }}
+  labels:
+    {{- include "babylon-runner.labels" . | nindent 4 }}
+data:
+  ANARCHY_URL: {{ .Values.config.anarchyURL | default (printf "http://anarchy.%s.svc:5000" .Release.Namespace) | quote }}
+  RUNNER_NAME: {{ .Values.runnerName | quote }}
+  POLLING_INTERVAL: {{ .Values.config.pollingInterval | quote }}
+  REQUEST_TIMEOUT: {{ .Values.config.requestTimeout | quote }}
+  TOWER_TLS_VERIFY: {{ .Values.config.towerTLSVerify | quote }}
+  METRICS_PORT: {{ .Values.config.metricsPort | quote }}
+  MAX_POLL_FAILURES: {{ .Values.config.maxPollFailures | quote }}
+  {{- if .Values.config.sandboxAPIURL }}
+  SANDBOX_API_URL: {{ .Values.config.sandboxAPIURL | quote }}
+  {{- end }}
+  {{- if .Values.config.towerCACert }}
+  TOWER_CA_CERT: {{ .Values.config.towerCACert | quote }}
+  {{- end }}
+  {{- if .Values.config.actionRetryIntervals }}
+  ACTION_RETRY_INTERVALS: {{ .Values.config.actionRetryIntervals | quote }}
+  {{- end }}
+  {{- range .Values.extraEnvVars }}
+  {{ .name }}: {{ .value | quote }}
+  {{- end }}
+{{- end }}
