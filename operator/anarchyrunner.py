@@ -221,6 +221,10 @@ class AnarchyRunner(AnarchyCachedKopfObject):
 
     async def manage_pods(self, logger):
         if self.ignore_pod_management:
+            logger.info(
+                f"Skipping pod management for runner {self.name} "
+                "(ignore-pod-management annotation set)"
+            )
             return
         if not self.pods_preloaded:
             await self.preload_pods()
