@@ -255,6 +255,8 @@ class AnarchyRunner(AnarchyCachedKopfObject):
             await self.create_runner_pod(logger=logger)
 
     async def manage_pod(self, pod, logger):
+        if self.ignore_pod_management:
+            return
         for entry in self.status.get('pods', []):
             if entry['name'] == pod.metadata.name:
                 consecutive_failure_count = entry.get('consecutiveFailureCount', 0)
@@ -299,6 +301,8 @@ class AnarchyRunner(AnarchyCachedKopfObject):
         self.pods[pod.metadata.name] = pod
 
     async def manage_service_account(self):
+        if self.ignore_pod_management:
+            return
         try:
             await Anarchy.core_v1_api.read_namespaced_service_account(self.service_account_name, Anarchy.namespace)
             return
@@ -307,8 +311,8 @@ class AnarchyRunner(AnarchyCachedKopfObject):
                 raise
         service_account = await Anarchy.core_v1_api.create_namespaced_service_account(
             Anarchy.namespace,
-            kubernetes.client.V1ServiceAccount(
-                metadata = kubernetes.client.V1ObjectMeta(
+            kubernetes_asyncio.client.V1ServiceAccount(
+                metadata = kubernetes_asyncio.client.V1ObjectMeta(
                     name = self.service_account_name,
                     owner_references = [self.as_owner_ref()],
                 )
