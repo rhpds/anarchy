@@ -25,112 +25,76 @@ babylon-runner/
   Dockerfile             # Multi-stage build (builder + ubi9-micro)
 ```
 
-## Enable the Go Runner
+## Deploy via Independent Helm Chart (Recommended)
 
-### Option A: Separate runner pool (recommended for testing)
+The babylon-runner has its own Helm chart at `babylon-runner/helm/`, independent from
+the Anarchy operator chart. This deploys a Deployment + HPA + ServiceMonitor alongside
+an AnarchyRunner CR annotated with `ignore-pod-management: "true"` (the operator skips
+pod management for this runner).
 
-Add a second runner pool in your Helm values alongside the existing `default` pool:
+### Prerequisites
+
+- The Anarchy operator must be running in the target namespace
+- The operator must include the `ignore-pod-management` annotation check
+  (merged in the operator change — see `operator/anarchyrunner.py`)
+
+### Install
+
+```bash
+helm install babylon-runner babylon-runner/helm/ \
+  --namespace <anarchy-namespace> \
+  --set runnerName=babylon
+```
+
+### Install with custom values
+
+```bash
+helm install babylon-runner babylon-runner/helm/ \
+  --namespace <anarchy-namespace> \
+  -f values-production.yaml
+```
+
+Example `values-production.yaml`:
 
 ```yaml
-# helm values override
-runners:
-  default:
-    # ... existing config unchanged ...
-  babylon-go:
-    consecutiveFailureLimit: 10
-    maxReplicas: 2
-    minReplicas: 1
-    runLimit: 100
-    scaleUpDelay: 5m
-    scaleUpThreshold: 20
-    scalingCheckInterval: 1m
-    resources:
-      limits:
-        cpu: "1"
-        memory: 256Mi
-      requests:
-        cpu: 500m
-        memory: 256Mi
+runnerName: babylon
+version: v0.1.0
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
 ```
 
-Then set `RUNNER_IMAGE` on the operator to point to the Go runner image, **or** patch the AnarchyRunner CR directly after deploy:
+### Upgrade
 
 ```bash
-oc patch anarchyrunner babylon-go -n anarchy --type merge -p '
-spec:
-  podTemplate:
-    spec:
-      containers:
-      - name: runner
-        image: quay.io/rhpds/babylon-runner:latest
-'
+helm upgrade babylon-runner babylon-runner/helm/ \
+  --namespace <anarchy-namespace> \
+  -f values-production.yaml
 ```
 
-Both pools will run side-by-side. Runs are dispatched FIFO to any available pod from any pool.
-
-> **Future**: The design spec calls for a `spec.runner` field on `AnarchyGovernor` to route
-> runs to a specific pool. Until that's implemented, both pools share the same queue.
-
-### Option B: Replace the default runner (full switchover)
-
-Override the runner image globally:
+### Uninstall (instant rollback)
 
 ```bash
-# Via Helm values
-helm upgrade anarchy ./helm \
-  --set image.repository=quay.io/rhpds/babylon-runner
-
-# Or via env var on the operator deployment
-oc set env deployment/anarchy -n anarchy RUNNER_IMAGE=quay.io/rhpds/babylon-runner:latest
+helm uninstall babylon-runner --namespace <anarchy-namespace>
 ```
 
-The operator will spawn all runner pods with the Go image instead of the Python one.
+This removes runner pods, the HPA, ServiceMonitor, and the AnarchyRunner CR.
+The Python runner (if still present) is completely untouched.
 
-### Option C: Per-namespace override
+### Token rotation
 
-If deploying per-namespace (multi-tenant), set the image in the namespace runner config:
-
-```yaml
-namespace:
-  name: anarchy-myenv
-  runners:
-    default:
-      # standard runner config, image comes from RUNNER_IMAGE or operator image
-    babylon-go:
-      resources:
-        limits:
-          cpu: "1"
-          memory: 256Mi
-        requests:
-          cpu: 500m
-          memory: 256Mi
-```
-
-Then patch the runner CR in that namespace as shown in Option A.
-
-## Disable the Go Runner
-
-### If using Option A (separate pool)
-
-Delete the extra runner pool:
+Change `auth.tokenSalt` and upgrade:
 
 ```bash
-oc delete anarchyrunner babylon-go -n anarchy
+helm upgrade babylon-runner babylon-runner/helm/ \
+  --namespace <anarchy-namespace> \
+  --set auth.tokenSalt=v2
 ```
 
-Or remove it from Helm values and re-deploy. All runs go back to the `default` (Python) pool.
-
-### If using Option B (full switchover)
-
-Revert the image:
-
-```bash
-# Remove the env var override — operator falls back to its own image
-oc set env deployment/anarchy -n anarchy RUNNER_IMAGE-
-
-# Or re-deploy with default values
-helm upgrade anarchy ./helm
-```
+Pods will restart with the new token. The API reads the token from the pod spec
+on each request, so no API restart is needed.
 
 ## Build the Image
 
