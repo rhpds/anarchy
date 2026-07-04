@@ -1,0 +1,12 @@
+{{/* babylon-runner/helm/templates/anarchyrunner.yaml */}}
+{{- if .Values.deploy }}
+apiVersion: anarchy.gpte.redhat.com/v1
+kind: AnarchyRunner
+metadata:
+  name: {{ .Values.runnerName }}
+  namespace: {{ include "babylon-runner.namespaceName" . }}
+  labels:
+    {{- include "babylon-runner.labels" . | nindent 4 }}
+  annotations:
+    {{ .Values.config.anarchyDomain }}/ignore-pod-management: "true"
+{{- end }}
