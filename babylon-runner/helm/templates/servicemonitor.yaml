@@ -1,0 +1,20 @@
+{{- if and .Values.deploy .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "babylon-runner.fullname" . }}
+  namespace: {{ include "babylon-runner.namespaceName" . }}
+  labels:
+    {{- include "babylon-runner.labels" . | nindent 4 }}
+spec:
+  endpoints:
+  - interval: {{ .Values.serviceMonitor.interval }}
+    path: /metrics
+    port: metrics
+  namespaceSelector:
+    matchNames:
+    - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      {{- include "babylon-runner.selectorLabels" . | nindent 6 }}
+{{- end }}
