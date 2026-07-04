@@ -1,0 +1,56 @@
+deploy: true
+version: main
+
+runnerName: babylon
+
+namespace:
+  create: false
+  name: ""
+
+auth:
+  tokenSalt: "v1"
+
+image:
+  repository: quay.io/rhpds/babylon-runner
+  pullPolicy: IfNotPresent
+  tagOverride: ""
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 128Mi
+
+config:
+  anarchyURL: ""
+  anarchyDomain: "anarchy.gpte.redhat.com"
+  pollingInterval: "5"
+  requestTimeout: "35"
+  sandboxAPIURL: ""
+  towerTLSVerify: "true"
+  towerCACert: ""
+  actionRetryIntervals: ""
+  metricsPort: "9093"
+  maxPollFailures: "10"
+
+extraEnvVars: []
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  scaleUp:
+    stabilizationWindowSeconds: 120
+    maxPods: 2
+    periodSeconds: 60
+  scaleDown:
+    stabilizationWindowSeconds: 300
+    maxPods: 1
+    periodSeconds: 60
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
