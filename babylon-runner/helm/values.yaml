@@ -29,7 +29,7 @@ config:
   pollingInterval: "5"
   requestTimeout: "35"
   sandboxAPIURL: ""
-  towerTLSVerify: "true"
+  towerTLSVerify: "false"
   towerCACert: ""
   actionRetryIntervals: ""
   metricsPort: "9093"

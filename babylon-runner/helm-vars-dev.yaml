@@ -1,0 +1,12 @@
+image:
+  repository: image-registry.openshift-image-registry.svc:5000/babylon-anarchy-test/babylon-runner
+  tagOverride: latest
+  pullPolicy: Always
+
+runnerName: babylon
+
+autoscaling:
+  enabled: false
+
+serviceMonitor:
+  enabled: false
