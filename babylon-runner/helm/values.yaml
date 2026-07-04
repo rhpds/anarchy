@@ -41,7 +41,7 @@ autoscaling:
   enabled: true
   minReplicas: 1
   maxReplicas: 10
-  targetCPUUtilizationPercentage: 70
+  targetCPUUtilizationPercentage: 50
   scaleUp:
     stabilizationWindowSeconds: 120
     maxPods: 2

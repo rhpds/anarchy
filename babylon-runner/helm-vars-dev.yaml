@@ -5,8 +5,5 @@ image:
 
 runnerName: babylon
 
-autoscaling:
-  enabled: false
-
 serviceMonitor:
   enabled: false
