@@ -3,10 +3,11 @@
 #
 # What it does:
 #   1. Starts port-forward to the anarchy service
-#   2. Creates a lightweight dev pod (sleep infinity) with the right labels
+#   2. Creates an AnarchyRunner CR with ignore-pod-management annotation
+#   3. Creates a lightweight dev pod (sleep infinity) with the right labels
 #      and a known token so the anarchy API recognizes it as a real runner.
-#   3. Builds and runs the Go runner using that pod identity.
-#   4. Cleans up everything on exit.
+#   4. Builds and runs the Go runner using that pod identity.
+#   5. Cleans up everything on exit (AnarchyRunner, dev pod, port-forward).
 #
 # Prerequisites:
 #   - oc login to your dev cluster
@@ -14,7 +15,7 @@
 set -euo pipefail
 
 NAMESPACE="${OPERATOR_NAMESPACE:-babylon-anarchy-test}"
-RUNNER="${RUNNER_NAME:-default}"
+RUNNER="${RUNNER_NAME:-babylon-dev}"
 DEV_POD="babylon-runner-godev"
 DEV_TOKEN=$(python3 -c "import random, string; print(''.join(random.choices(string.ascii_lowercase + string.digits, k=24)))")
 PORT_FORWARD_PID=""
@@ -29,6 +30,7 @@ cleanup() {
     wait "$PORT_FORWARD_PID" 2>/dev/null || true
   fi
   oc delete pod "$DEV_POD" -n "$NAMESPACE" --ignore-not-found --wait=false 2>/dev/null || true
+  oc delete anarchyrunner "$RUNNER" -n "$NAMESPACE" --ignore-not-found --wait=false 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
@@ -45,6 +47,23 @@ if ! kill -0 "$PORT_FORWARD_PID" 2>/dev/null; then
   exit 1
 fi
 
+# --- Create AnarchyRunner CR ---
+
+oc delete anarchyrunner "$RUNNER" -n "$NAMESPACE" --ignore-not-found --wait=true 2>/dev/null || true
+
+echo "Creating AnarchyRunner $RUNNER..."
+cat <<EOF | oc create -n "$NAMESPACE" -f -
+apiVersion: anarchy.gpte.redhat.com/v1
+kind: AnarchyRunner
+metadata:
+  name: ${RUNNER}
+  annotations:
+    anarchy.gpte.redhat.com/ignore-pod-management: "true"
+spec:
+  minReplicas: 1
+  maxReplicas: 1
+EOF
+
 # --- Create a dev runner pod ---
 
 # Delete any leftover dev pod from a previous run and wait for it to be gone.
@@ -59,10 +78,18 @@ metadata:
   labels:
     anarchy.gpte.redhat.com/runner: ${RUNNER}
 spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
   containers:
   - name: runner
     image: registry.access.redhat.com/ubi9/ubi-minimal:latest
     command: ["sleep", "infinity"]
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
     env:
     - name: RUNNER_TOKEN
       value: "${DEV_TOKEN}"
