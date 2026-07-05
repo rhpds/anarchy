@@ -32,6 +32,7 @@ config:
   towerTLSVerify: "false"
   towerCACert: ""
   actionRetryIntervals: ""
+  towerPollIntervals: ""
   metricsPort: "9093"
   maxPollFailures: "10"
 

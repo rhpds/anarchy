@@ -24,6 +24,9 @@ data:
   {{- if .Values.config.actionRetryIntervals }}
   ACTION_RETRY_INTERVALS: {{ .Values.config.actionRetryIntervals | quote }}
   {{- end }}
+  {{- if .Values.config.towerPollIntervals }}
+  TOWER_POLL_INTERVALS: {{ .Values.config.towerPollIntervals | quote }}
+  {{- end }}
   {{- range .Values.extraEnvVars }}
   {{ .name }}: {{ .value | quote }}
   {{- end }}
