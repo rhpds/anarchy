@@ -131,6 +131,7 @@ func (r *Runner) pollOnce(ctx context.Context) error {
 		TowerClientPool:      r.towerPool,
 		SecretCache:          r.secretCache,
 		ActionRetryIntervals: r.config.ActionRetryIntervals,
+		TowerPollIntervals:   r.config.TowerPollIntervals,
 		Result: types.RunResult{
 			Status: "successful",
 		},

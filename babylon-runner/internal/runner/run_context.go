@@ -26,6 +26,7 @@ type RunContext struct {
 	TowerClientPool      *clients.TowerClientPool
 	SecretCache          *secrets.Cache
 	ActionRetryIntervals []string
+	TowerPollIntervals   []string
 }
 
 // --- Convenience accessors (typed payloads make these trivial) ---
