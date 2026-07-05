@@ -1446,3 +1446,145 @@ func TestHandleStatusCompleteWithData(t *testing.T) {
 		t.Errorf("status_messages = %v, want [all good]", sm)
 	}
 }
+
+// --- towerPollInterval tests ---
+
+func TestTowerPollIntervals(t *testing.T) {
+	intervals := []string{"20s", "30s", "1m", "1m", "2m", "5m"}
+
+	expected := map[int]string{
+		0: "20s",
+		1: "30s",
+		2: "1m",
+		3: "1m",
+		4: "2m",
+		5: "5m",
+	}
+	for i, want := range expected {
+		got := towerPollInterval(i, intervals)
+		if got != want {
+			t.Errorf("towerPollInterval(%d) = %q, want %q", i, got, want)
+		}
+	}
+
+	// Beyond the list: should cap at last interval.
+	if got := towerPollInterval(6, intervals); got != "5m" {
+		t.Errorf("towerPollInterval(6) = %q, want 5m (cap)", got)
+	}
+	if got := towerPollInterval(100, intervals); got != "5m" {
+		t.Errorf("towerPollInterval(100) = %q, want 5m (cap)", got)
+	}
+}
+
+func TestTowerPollCount(t *testing.T) {
+	server, _ := newTestAnarchyServer(t)
+	defer server.Close()
+
+	t.Run("nil action vars", func(t *testing.T) {
+		rc := newTestRunContext(t, server)
+		// No action set — ActionVars() returns nil.
+		if got := towerPollCount(rc); got != 0 {
+			t.Errorf("towerPollCount(nil vars) = %d, want 0", got)
+		}
+	})
+
+	t.Run("no tower_poll_count in vars", func(t *testing.T) {
+		rc := newTestRunContext(t, server)
+		rc.Payload.Action = &types.Action{
+			Spec: types.ActionSpec{
+				Vars: map[string]interface{}{
+					"some_other_var": "value",
+				},
+			},
+		}
+		if got := towerPollCount(rc); got != 0 {
+			t.Errorf("towerPollCount(no key) = %d, want 0", got)
+		}
+	})
+
+	t.Run("tower_poll_count present", func(t *testing.T) {
+		rc := newTestRunContext(t, server)
+		rc.Payload.Action = &types.Action{
+			Spec: types.ActionSpec{
+				Vars: map[string]interface{}{
+					"tower_poll_count": float64(3),
+				},
+			},
+		}
+		if got := towerPollCount(rc); got != 3 {
+			t.Errorf("towerPollCount(3) = %d, want 3", got)
+		}
+	})
+}
+
+func TestContinueWithTowerPoll(t *testing.T) {
+	server, _ := newTestAnarchyServer(t)
+	defer server.Close()
+
+	t.Run("first poll (count=0)", func(t *testing.T) {
+		rc := newTestRunContext(t, server)
+		rc.Payload.Action = &types.Action{
+			Spec: types.ActionSpec{
+				Vars: map[string]interface{}{},
+			},
+		}
+		continueWithTowerPoll(rc)
+
+		if rc.Result.ContinueAction == nil {
+			t.Fatal("ContinueAction is nil")
+		}
+		assertAfterTimestamp(t, rc.Result.ContinueAction.After, "20s")
+		if rc.Result.ContinueAction.Vars == nil {
+			t.Fatal("ContinueAction.Vars is nil")
+		}
+		count, ok := rc.Result.ContinueAction.Vars["tower_poll_count"].(int)
+		if !ok {
+			t.Fatalf("tower_poll_count not an int: %T", rc.Result.ContinueAction.Vars["tower_poll_count"])
+		}
+		if count != 1 {
+			t.Errorf("tower_poll_count = %d, want 1", count)
+		}
+	})
+
+	t.Run("third poll (count=2)", func(t *testing.T) {
+		rc := newTestRunContext(t, server)
+		rc.Payload.Action = &types.Action{
+			Spec: types.ActionSpec{
+				Vars: map[string]interface{}{
+					"tower_poll_count": float64(2),
+				},
+			},
+		}
+		continueWithTowerPoll(rc)
+
+		if rc.Result.ContinueAction == nil {
+			t.Fatal("ContinueAction is nil")
+		}
+		assertAfterTimestamp(t, rc.Result.ContinueAction.After, "1m")
+		count := rc.Result.ContinueAction.Vars["tower_poll_count"].(int)
+		if count != 3 {
+			t.Errorf("tower_poll_count = %d, want 3", count)
+		}
+	})
+
+	t.Run("beyond schedule (count=10)", func(t *testing.T) {
+		rc := newTestRunContext(t, server)
+		rc.Payload.Action = &types.Action{
+			Spec: types.ActionSpec{
+				Vars: map[string]interface{}{
+					"tower_poll_count": float64(10),
+				},
+			},
+		}
+		continueWithTowerPoll(rc)
+
+		if rc.Result.ContinueAction == nil {
+			t.Fatal("ContinueAction is nil")
+		}
+		assertAfterTimestamp(t, rc.Result.ContinueAction.After, "5m")
+		count := rc.Result.ContinueAction.Vars["tower_poll_count"].(int)
+		if count != 11 {
+			t.Errorf("tower_poll_count = %d, want 11", count)
+		}
+	})
+}

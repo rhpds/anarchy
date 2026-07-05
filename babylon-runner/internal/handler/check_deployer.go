@@ -77,7 +77,7 @@ func checkDeployerJob(rc *runner.RunContext, action string) error {
 	default:
 		// Job still running (pending, waiting, running)
 		slog.Info("checkDeployerJob: job still running", "job", deployerJob, "status", status, "action", action, "subject", rc.SubjectName())
-		rc.ContinueAction("5m")
+		continueWithTowerPoll(rc)
 		return nil
 	}
 }
@@ -97,6 +97,35 @@ func continueWithRetry(rc *runner.RunContext) {
 	rc.ContinueActionWithVars(interval, map[string]interface{}{
 		"action_retry_count": count + 1,
 	})
+}
+
+// towerPollInterval returns the poll interval for the given poll count.
+func towerPollInterval(pollCount int, intervals []string) string {
+	if pollCount < len(intervals) {
+		return intervals[pollCount]
+	}
+	return intervals[len(intervals)-1]
+}
+
+// towerPollCount returns the current tower poll count from action vars.
+func towerPollCount(rc *runner.RunContext) int {
+	if vars := rc.ActionVars(); vars != nil {
+		if count, ok := vars["tower_poll_count"].(float64); ok {
+			return int(count)
+		}
+	}
+	return 0
+}
+
+// continueWithTowerPoll continues the action with progressive tower poll backoff.
+func continueWithTowerPoll(rc *runner.RunContext) {
+	count := towerPollCount(rc)
+	rc.ContinueActionWithVars(
+		towerPollInterval(count, rc.TowerPollIntervals),
+		map[string]interface{}{
+			"tower_poll_count": count + 1,
+		},
+	)
 }
 
 // handleDeployerJobFailure routes to action-specific failure handlers.
