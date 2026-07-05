@@ -319,3 +319,40 @@ func TestConfigActionRetryIntervals(t *testing.T) {
 		}
 	})
 }
+
+func TestConfigTowerPollIntervals(t *testing.T) {
+	setRequiredEnvs(t)
+
+	t.Run("default intervals", func(t *testing.T) {
+		cfg, err := ConfigFromEnv()
+		if err != nil {
+			t.Fatalf("ConfigFromEnv: %v", err)
+		}
+		expected := []string{"20s", "30s", "1m", "1m", "2m", "5m"}
+		if len(cfg.TowerPollIntervals) != len(expected) {
+			t.Fatalf("len = %d, want %d", len(cfg.TowerPollIntervals), len(expected))
+		}
+		for i, v := range expected {
+			if cfg.TowerPollIntervals[i] != v {
+				t.Errorf("[%d] = %q, want %q", i, cfg.TowerPollIntervals[i], v)
+			}
+		}
+	})
+
+	t.Run("custom intervals", func(t *testing.T) {
+		t.Setenv("TOWER_POLL_INTERVALS", "30s,1m,5m")
+		cfg, err := ConfigFromEnv()
+		if err != nil {
+			t.Fatalf("ConfigFromEnv: %v", err)
+		}
+		if len(cfg.TowerPollIntervals) != 3 {
+			t.Fatalf("len = %d, want 3", len(cfg.TowerPollIntervals))
+		}
+		if cfg.TowerPollIntervals[0] != "30s" {
+			t.Errorf("[0] = %q, want 30s", cfg.TowerPollIntervals[0])
+		}
+		if cfg.TowerPollIntervals[2] != "5m" {
+			t.Errorf("[2] = %q, want 5m", cfg.TowerPollIntervals[2])
+		}
+	})
+}

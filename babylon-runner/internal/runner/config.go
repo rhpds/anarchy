@@ -17,6 +17,11 @@ var DefaultActionRetryIntervals = []string{
 	"1m", "5m", "10m", "30m", "1h", "2h", "4h", "8h", "16h", "1d",
 }
 
+// DefaultTowerPollIntervals is the default schedule for Tower job polling.
+var DefaultTowerPollIntervals = []string{
+	"20s", "30s", "1m", "1m", "2m", "5m",
+}
+
 // Config holds the runner configuration parsed from environment variables.
 type Config struct {
 	AnarchyURL           string
@@ -30,6 +35,7 @@ type Config struct {
 	TowerTLSVerify       bool
 	TowerCACert          string
 	ActionRetryIntervals []string
+	TowerPollIntervals   []string
 	MetricsPort          int
 	MaxPollFailures      int
 }
@@ -74,6 +80,7 @@ func ConfigFromEnv() (Config, error) {
 	cfg.TowerTLSVerify = envBool("TOWER_TLS_VERIFY", true)
 	cfg.TowerCACert = os.Getenv("TOWER_CA_CERT")
 	cfg.ActionRetryIntervals = envStringSlice("ACTION_RETRY_INTERVALS", DefaultActionRetryIntervals)
+	cfg.TowerPollIntervals = envStringSlice("TOWER_POLL_INTERVALS", DefaultTowerPollIntervals)
 	cfg.MetricsPort = envInt("METRICS_PORT", 9093)
 	cfg.MaxPollFailures = envInt("MAX_POLL_FAILURES", 10)
 	return cfg, nil
