@@ -89,7 +89,7 @@ func runDestroy(rc *runner.RunContext) error {
 		return err
 	}
 
-	rc.ContinueAction("5m")
+	rc.ContinueAction(rc.TowerPollIntervals[0])
 	return nil
 }
 

@@ -84,7 +84,7 @@ func runStatus(rc *runner.RunContext) error {
 			slog.Error("runStatus: tower launch failed", "subject", rc.SubjectName(), "error", err)
 			return err
 		}
-		rc.ContinueAction("5m")
+		rc.ContinueAction(rc.TowerPollIntervals[0])
 		return nil
 	}
 

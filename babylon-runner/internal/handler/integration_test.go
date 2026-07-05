@@ -216,7 +216,7 @@ func TestIntegrationProvisionWithTowerJob(t *testing.T) {
 	if rc.Result.ContinueAction == nil {
 		t.Fatal("expected ContinueAction directive to be set")
 	}
-	assertAfterTimestamp(t, rc.Result.ContinueAction.After, "5m")
+	assertAfterTimestamp(t, rc.Result.ContinueAction.After, "20s")
 }
 
 func TestIntegrationProvisionWithSandboxAndTower(t *testing.T) {
@@ -334,7 +334,7 @@ func TestIntegrationProvisionWithSandboxAndTower(t *testing.T) {
 	if rc.Result.ContinueAction == nil {
 		t.Fatal("expected ContinueAction directive to be set")
 	}
-	assertAfterTimestamp(t, rc.Result.ContinueAction.After, "5m")
+	assertAfterTimestamp(t, rc.Result.ContinueAction.After, "20s")
 }
 
 func TestIntegrationProvisionSandboxQueued(t *testing.T) {
@@ -646,7 +646,7 @@ func TestIntegrationDestroyWithTowerJob(t *testing.T) {
 	if rc.Result.ContinueAction == nil {
 		t.Fatal("expected ContinueAction directive to be set")
 	}
-	assertAfterTimestamp(t, rc.Result.ContinueAction.After, "5m")
+	assertAfterTimestamp(t, rc.Result.ContinueAction.After, "20s")
 }
 
 func TestIntegrationDestroyCompleteWithSandboxCleanup(t *testing.T) {
@@ -846,7 +846,7 @@ func TestIntegrationStopWithTowerJob(t *testing.T) {
 	if rc.Result.ContinueAction == nil {
 		t.Fatal("expected ContinueAction directive to be set")
 	}
-	assertAfterTimestamp(t, rc.Result.ContinueAction.After, "5m")
+	assertAfterTimestamp(t, rc.Result.ContinueAction.After, "20s")
 }
 
 func TestIntegrationStatusWithTowerJob(t *testing.T) {
@@ -909,7 +909,7 @@ func TestIntegrationStatusWithTowerJob(t *testing.T) {
 	if rc.Result.ContinueAction == nil {
 		t.Fatal("expected ContinueAction directive to be set")
 	}
-	assertAfterTimestamp(t, rc.Result.ContinueAction.After, "5m")
+	assertAfterTimestamp(t, rc.Result.ContinueAction.After, "20s")
 }
 
 func TestIntegrationEventDeleteWithCancelJobs(t *testing.T) {
@@ -1291,7 +1291,7 @@ func TestIntegrationDestroyWithCancelProvisionJob(t *testing.T) {
 	if rc.Result.ContinueAction == nil {
 		t.Fatal("expected ContinueAction directive to be set")
 	}
-	assertAfterTimestamp(t, rc.Result.ContinueAction.After, "5m")
+	assertAfterTimestamp(t, rc.Result.ContinueAction.After, "20s")
 }
 
 func TestIntegrationProvisionDeployerDisabledSandbox(t *testing.T) {

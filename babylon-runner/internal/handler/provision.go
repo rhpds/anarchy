@@ -102,7 +102,7 @@ func runProvision(rc *runner.RunContext) error {
 			slog.Error("runProvision: tower launch failed", "subject", rc.SubjectName(), "error", err)
 			return handleProvisionError(rc)
 		}
-		rc.ContinueAction("5m")
+		rc.ContinueAction(rc.TowerPollIntervals[0])
 		return nil
 	}
 

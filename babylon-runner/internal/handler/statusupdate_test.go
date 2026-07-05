@@ -64,7 +64,7 @@ func TestHandleStatusPending(t *testing.T) {
 	if rc.Result.ContinueAction == nil {
 		t.Fatal("expected ContinueAction to be set")
 	}
-	assertAfterTimestamp(t, rc.Result.ContinueAction.After, "5m")
+	assertAfterTimestamp(t, rc.Result.ContinueAction.After, "20s")
 }
 
 func TestHandleStatusRunning(t *testing.T) {
@@ -240,7 +240,7 @@ func TestHandleUpdateNotUpdating(t *testing.T) {
 	if rc.Result.ContinueAction == nil {
 		t.Fatal("expected ContinueAction to be set")
 	}
-	assertAfterTimestamp(t, rc.Result.ContinueAction.After, "5m")
+	assertAfterTimestamp(t, rc.Result.ContinueAction.After, "20s")
 }
 
 func TestHandleUpdateUpdating(t *testing.T) {
