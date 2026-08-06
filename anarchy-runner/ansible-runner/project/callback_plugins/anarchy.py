@@ -39,6 +39,9 @@ def current_time():
 def munge_result(result):
     """Return cleaned up and pruned version of result dict"""
     ret = result._result.copy()
+    # Discard content from result if repeated in json
+    if 'json' in ret:
+        ret.pop('content', None)
     # Discard stdout_lines if result has stdout
     if 'stdout' in ret:
         ret.pop('stdout_lines', None)
