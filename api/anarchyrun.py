@@ -11,6 +11,7 @@ import anarchysubject
 import kubernetes_asyncio
 from anarchy import Anarchy
 from anarchywatchobject import AnarchyWatchObject
+from metrics import AppMetrics
 
 
 class AnarchyRun(AnarchyWatchObject):
@@ -232,6 +233,10 @@ class AnarchyRun(AnarchyWatchObject):
                 self.notify_run_available()
         elif self.name in self.pending_run_names:
             self.pending_run_names.remove(self.name)
+        AppMetrics.pending_runs.set(
+            {"namespace": Anarchy.namespace},
+            len(self.pending_run_names),
+        )
 
     async def assign_runner_pod(self, anarchy_runner, anarchy_runner_pod):
         definition = deepcopy(self.definition)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from aioprometheus import REGISTRY, Histogram
+from aioprometheus import REGISTRY, Gauge, Histogram
 
 
 class AppMetrics:
@@ -27,6 +27,15 @@ class AppMetrics:
             "route": "The handler function name (e.g. get_run, post_action)",
             "status": "The HTTP status code",
             "cluster_domain": "The cluster name",
+        },
+        registry=registry,
+    )
+
+    pending_runs = Gauge(
+        "anarchy_runner_pending_runs",
+        "Total number of pending AnarchyRuns in the namespace",
+        {
+            "namespace": "The Kubernetes namespace",
         },
         registry=registry,
     )
