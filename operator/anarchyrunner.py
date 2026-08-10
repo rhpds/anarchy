@@ -101,6 +101,10 @@ class AnarchyRunner(AnarchyCachedKopfObject):
         """
         return self.pod_template.get('spec', {}).get('serviceAccountName', f"anarchy-runner-{self.name}")
 
+    @property
+    def ignore_pod_management(self):
+        return self.annotations.get(f"{Anarchy.domain}/ignore-pod-management") == "true"
+
     def make_pod_template(self, runner_token=None):
         ret = deepcopy(self.pod_template)
 
@@ -216,6 +220,12 @@ class AnarchyRunner(AnarchyCachedKopfObject):
         await self.manage_pods(logger=logger)
 
     async def manage_pods(self, logger):
+        if self.ignore_pod_management:
+            logger.info(
+                f"Skipping pod management for runner {self.name} "
+                "(ignore-pod-management annotation set)"
+            )
+            return
         if not self.pods_preloaded:
             await self.preload_pods()
 
@@ -245,6 +255,8 @@ class AnarchyRunner(AnarchyCachedKopfObject):
             await self.create_runner_pod(logger=logger)
 
     async def manage_pod(self, pod, logger):
+        if self.ignore_pod_management:
+            return
         for entry in self.status.get('pods', []):
             if entry['name'] == pod.metadata.name:
                 consecutive_failure_count = entry.get('consecutiveFailureCount', 0)
@@ -289,6 +301,8 @@ class AnarchyRunner(AnarchyCachedKopfObject):
         self.pods[pod.metadata.name] = pod
 
     async def manage_service_account(self):
+        if self.ignore_pod_management:
+            return
         try:
             await Anarchy.core_v1_api.read_namespaced_service_account(self.service_account_name, Anarchy.namespace)
             return
@@ -297,8 +311,8 @@ class AnarchyRunner(AnarchyCachedKopfObject):
                 raise
         service_account = await Anarchy.core_v1_api.create_namespaced_service_account(
             Anarchy.namespace,
-            kubernetes.client.V1ServiceAccount(
-                metadata = kubernetes.client.V1ObjectMeta(
+            kubernetes_asyncio.client.V1ServiceAccount(
+                metadata = kubernetes_asyncio.client.V1ObjectMeta(
                     name = self.service_account_name,
                     owner_references = [self.as_owner_ref()],
                 )
