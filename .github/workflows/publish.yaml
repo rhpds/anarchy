@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout source
-      uses: actions/checkout@v3
+      uses: actions/checkout@v7
 
     - name: Set image tags
       id: image_tags
@@ -41,7 +41,7 @@ jobs:
     - name: Buildah Action
       id: buildah-build
       if: steps.image_tags.outputs.IMAGE_TAGS
-      uses: redhat-actions/buildah-build@v2
+      uses: redhat-actions/buildah-build@v3
       with:
         image: ${{ vars.IMAGE_NAME }}
         tags: ${{ steps.image_tags.outputs.IMAGE_TAGS }}
@@ -50,7 +50,7 @@ jobs:
     - name: Push image to registry
       id: push-to-registry
       if: steps.image_tags.outputs.IMAGE_TAGS
-      uses: redhat-actions/push-to-registry@v2
+      uses: redhat-actions/push-to-registry@v3
       with:
         image: ${{ steps.buildah-build.outputs.image }}
         tags: ${{ steps.buildah-build.outputs.tags }}
@@ -63,18 +63,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout Source
-      uses: actions/checkout@v3
+      uses: actions/checkout@v7
       with:
         fetch-depth: 0
 
     - name: Checkout gh-pages
-      uses: actions/checkout@v3
+      uses: actions/checkout@v7
       with:
         ref: gh-pages
         path: gh-pages
 
     - name: Configure Helm
-      uses: azure/setup-helm@v1
+      uses: azure/setup-helm@v5
       with:
         version: latest
 
